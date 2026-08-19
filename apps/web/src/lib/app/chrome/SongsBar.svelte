@@ -8,11 +8,19 @@
      Rename (inline CommitInput; double-click too), Duplicate, or Delete a local
      song, or Detach copy / Remove from show for a library reference. A reference
      wears a visible LibraryBig badge; renaming one routes to the canonical
-     library copy (propagates). Chips stay chips — no row chrome. */
+     library copy (propagates). Chips stay chips — no row chrome.
+
+     The chips are FLANKED by prev/next arrows — the twin of the Sections bar's, stepping
+     whole songs (landing on each song's first section, the convention Program Change recall
+     also uses). Same step as the `prevSong` / `nextSong` global control, resolved through the
+     engine's own clamp rule, and placed OUTSIDE the scrolling chip strip so the stepper never
+     scrolls away from the row it steps. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import { showSongRows, type ShowSongRow } from '../views/objects-view';
+  import { BIND_INVITE, globalControlBindingSummary } from '../global-control-labels';
   import { VIEWING_REASON } from './edit-gate';
   import IconButton from '../../ui/IconButton.svelte';
+  import NavArrow from '../../ui/NavArrow.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
@@ -30,6 +38,8 @@
   // The last-song guard counts LOCAL songs only — removing a reference drops the
   // ref, never the local setlist (SongRail's rule, unchanged).
   const canDeleteLocal = $derived(store.songs.length > 1);
+  const prevBinding = $derived(globalControlBindingSummary(store.globalControls.prevSong));
+  const nextBinding = $derived(globalControlBindingSummary(store.globalControls.nextSong));
 
   /** The chip being renamed in place, or null. */
   let editingId = $state<string | null>(null);
@@ -78,6 +88,14 @@
 
 <div class="bar" role="navigation" aria-label="Setlist songs">
   <span class="rowlabel"><ListMusic size={13} aria-hidden="true" /> Setlist</span>
+  <NavArrow
+    direction="prev"
+    unit="song"
+    disabled={!store.canStepSetlist('song', -1)}
+    binding={prevBinding}
+    bindingInvite={BIND_INVITE}
+    onclick={() => store.stepSetlist('song', -1)}
+  />
   <div class="chips">
     {#if songRows.length === 0}
       <span class="none">No songs in this show</span>
@@ -123,6 +141,14 @@
       onclick={() => store.createSong()}
     />
   </div>
+  <NavArrow
+    direction="next"
+    unit="song"
+    disabled={!store.canStepSetlist('song', 1)}
+    binding={nextBinding}
+    bindingInvite={BIND_INVITE}
+    onclick={() => store.stepSetlist('song', 1)}
+  />
 </div>
 
 <style>

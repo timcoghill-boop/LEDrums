@@ -1,6 +1,7 @@
 /* Pure display helpers for the global control bindings (Settings). No Svelte / DOM —
    unit-tested in isolation, like `trigger-source-label.ts` which it borrows from. */
 import type { GlobalControlBinding, InputMap } from '@ledrums/core';
+import { formatMidiNote } from '../midi/midi-note';
 import { describeTriggerSource, zoneLinkForSource, type DrumRef } from './trigger-source-label';
 
 /**
@@ -46,3 +47,24 @@ export function globalControlZoneWarning(
 
   return null;
 }
+
+/** Where a global control is bound, if it is bound at all — the copy the Settings pane already
+    spells out in two fields, compressed to one line so a control that is ALSO reachable from the
+    chrome (the Setlist / Sections arrows) can say so on hover.
+
+    Both bindings are independent, so an action bound to a note AND an address reports both, in the
+    order the Settings rows list them. Returns null when nothing is bound, which callers render as
+    the invitation to bind rather than as a stray empty separator. */
+export function globalControlBindingSummary(binding: GlobalControlBinding | undefined): string | null {
+  const parts: string[] = [];
+  if (binding?.midiNote !== undefined) parts.push(`MIDI ${formatMidiNote(binding.midiNote)}`);
+  if (binding?.midiCc !== undefined) parts.push(`CC ${binding.midiCc}`);
+  const address = binding?.oscAddress?.trim();
+  if (address) parts.push(address);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/** What an in-app control says when the MIDI/OSC step it duplicates is not bound yet. Names the
+    one place bindings live, because "you can drive this from a footswitch" is invisible otherwise —
+    the arrow works by mouse either way, so nothing else would ever prompt the reader to look. */
+export const BIND_INVITE = 'bind in Settings → Controls';

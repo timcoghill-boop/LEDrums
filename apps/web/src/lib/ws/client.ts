@@ -65,6 +65,11 @@ export interface WSCallbacks {
   onProjects?: (names: string[]) => void;
   /** Reply to `listBackups` (#123): the local snapshot listing (newest-first) for the Backups dialog. */
   onBackups?: (items: BackupSnapshotMeta[]) => void;
+  /** The engine moved the set (S: setlist nav). Fires for every recall the engine performs —
+      including the relative `nextSection` / `prevSong` a bound MIDI note or OSC address drives,
+      which resolves inside the engine and so cannot be predicted client-side. Apply it WITHOUT
+      sending a `recallSection` back. */
+  onRecalled?: (songId: string | null, sectionId: string | null) => void;
   /** Multi-client presence (S1): who is the single editor, whether WE are it, and the headcount. */
   onPresence?: (editorId: string | null, youAreEditor: boolean, clientCount: number) => void;
   /** Live authored-library push (S1): the editor's library relayed by the server — a viewer adopts
@@ -263,6 +268,9 @@ export class WSClient {
       }
       case 'monitor':
         this.cb.onMonitor?.(msg.event);
+        break;
+      case 'recalled':
+        this.cb.onRecalled?.(msg.songId, msg.sectionId);
         break;
       case 'projects':
         this.cb.onProjects?.(msg.names);

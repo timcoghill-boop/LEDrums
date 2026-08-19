@@ -257,4 +257,19 @@ describe('WSClient — room PIN (S3)', () => {
     vi.advanceTimersByTime(50);
     expect(FakeWS.instances.length).toBe(2);
   });
+
+  // Relative navigation resolves inside the engine, so `recalled` is the ONLY way the web
+  // learns that a bound MIDI note or OSC address moved the set.
+  it('dispatches a recalled ServerMessage to onRecalled', () => {
+    const { client } = makeClient();
+    const onRecalled = vi.fn();
+    client.on({ onRecalled });
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+
+    ws.emitText(JSON.stringify({ t: 'recalled', songId: 'songB', sectionId: 'b0' } satisfies ServerMessage));
+
+    expect(onRecalled).toHaveBeenCalledWith('songB', 'b0');
+  });
 });

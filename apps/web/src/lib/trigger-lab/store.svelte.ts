@@ -1563,6 +1563,7 @@ export class TriggerLab {
         this.serverFrame = frame;
       },
       onInput: (input) => this.receiveInputEcho(input),
+      onRecalled: (songId, sectionId) => this.adoptEngineRecall(songId, sectionId),
       // Server-side rejection (e.g. an invalid patch paste — S45): surface it as a dismissible
       // notice so the failure is user-visible rather than silent.
       onError: (message) => {
@@ -2036,6 +2037,66 @@ export class TriggerLab {
     if (this.link === 'open') {
       this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
     }
+  }
+
+  /**
+   * Adopt a recall the SERVER's engine performed (`recalled`). This is how a bound MIDI note or
+   * OSC address moves the UI: `nextSection` resolves inside the engine's queue drain against the
+   * engine's own active position, so the web has no way to compute where it landed — it is told.
+   *
+   * Deliberately writes the runes DIRECTLY rather than calling `setActiveSong`/`setActiveSection`:
+   * those send a `recallSection` back up, which the engine would answer with another `recalled`,
+   * and the two would ping-pong. Ids we don't recognise are ignored, so a stale broadcast racing a
+   * show switch cannot strand the UI on a section that no longer exists.
+   */
+  private adoptEngineRecall(songId: string | null, sectionId: string | null): void {
+    if (songId !== null && this.resolvedSongs.some((s) => s.id === songId)) this.activeSongId = songId;
+    if (sectionId === null) return;
+    const song = this.resolvedSongs.find((s) => s.id === this.activeSongId);
+    if (!song?.sections.some((sec) => sec.id === sectionId)) return;
+    this.activeSectionId = sectionId;
+  }
+
+  // --- relative setlist navigation (the chrome-bar arrows + their MIDI/OSC twins) --------
+  //
+  // "Next section" has TWO front doors: the arrow in the Sections bar, and the `nextSection`
+  // global control a footswitch or a DAW fires. They must mean the same thing, so both resolve
+  // through the ENGINE's own `relativeNavTarget` — the arrows do not carry a second copy of the
+  // clamp rule. Ends CLAMP rather than wrap (see core `navigation.ts`), which is also why an
+  // arrow at the end of a song goes DISABLED instead of quietly teleporting to song 1.
+
+  /**
+   * Where a relative move lands, or null when there is nowhere to go (empty setlist, or already
+   * clamped against the end it is pushing into). Pure — safe to call from a `$derived`.
+   */
+  setlistNavTarget(axis: voice.NavAxis, delta: number): voice.NavTarget | null {
+    return voice.relativeNavTarget(
+      { songs: this.resolvedSongs },
+      { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId },
+      axis,
+      delta,
+    );
+  }
+
+  /** Whether a relative move has anywhere to go — what an arrow disables on. */
+  canStepSetlist(axis: voice.NavAxis, delta: number): boolean {
+    return this.setlistNavTarget(axis, delta) !== null;
+  }
+
+  /**
+   * Take a relative move on the setlist. The song axis lands on the target song's FIRST section
+   * (the convention Program Change recall and the engine both use); the section axis stays inside
+   * the active song. Returns whether it moved, so a caller can tell a clamp from a no-op.
+   *
+   * NAVIGATION IS NOT AUTHORING: deliberately not gated on `canEdit`. A viewer following along on
+   * a second screen may walk the set; only the content is read-only.
+   */
+  stepSetlist(axis: voice.NavAxis, delta: number): boolean {
+    const target = this.setlistNavTarget(axis, delta);
+    if (!target) return false;
+    if (axis === 'song') this.setActiveSong(target.songId);
+    else this.setActiveSection(target.sectionId);
+    return true;
   }
 
   /**

@@ -312,6 +312,9 @@
     activeSongId = $state('song-1');
     activeSectionId = $state('sec-1');
     canEdit = true;
+    /* One bound, one not — the arrows' tooltips then demo BOTH states in one frame
+       (the binding it fires, and the invitation to bind the one that has none). */
+    globalControls = { nextSong: { midiNote: 100 }, nextSection: { oscAddress: '/ledrums/next_section' } };
     get activeSong() {
       return this.songs.find((s) => s.id === this.activeSongId) ?? null;
     }
@@ -322,6 +325,27 @@
       this.activeSectionId = id;
     }
     createSong(): void {}
+    addSongSection(): void {}
+    /* The arrows resolve through the REAL engine clamp rule, stub or not — a styleguide that
+       let them wrap would be demoing a stepper the app does not have. */
+    private navTarget(axis: voice.NavAxis, delta: number): voice.NavTarget | null {
+      return voice.relativeNavTarget(
+        { songs: this.resolvedSongs },
+        { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId },
+        axis,
+        delta,
+      );
+    }
+    canStepSetlist(axis: voice.NavAxis, delta: number): boolean {
+      return this.navTarget(axis, delta) !== null;
+    }
+    stepSetlist(axis: voice.NavAxis, delta: number): boolean {
+      const target = this.navTarget(axis, delta);
+      if (!target) return false;
+      if (axis === 'song') this.setActiveSong(target.songId);
+      else this.setActiveSection(target.sectionId);
+      return true;
+    }
   }
   const setlistStub = new SetlistStub() as unknown as TriggerLab;
   let demoCollection = $state('ambient');
@@ -361,7 +385,7 @@
     <DemoCard
       title="Setlist songs bar · sections bar"
       src={['lib/app/chrome/SongsBar', 'lib/app/chrome/SectionsBar']}
-      note="Chrome rows 2 + 3: chip rows for the show's setlist and the active song's sections. The active chip is surface-raised with an inset ring; the count trails in tabular numerals; editors get the add-song affordance. Both scroll horizontally without a visible scrollbar."
+      note="Chrome rows 2 + 3: chip rows for the show's setlist and the active song's sections. The active chip is surface-raised with an inset ring; the count trails in tabular numerals; editors get the add affordance. Both scroll horizontally without a visible scrollbar — which is why the prev/next arrows sit OUTSIDE the strip, so the stepper never scrolls away from what it steps. The arrows clamp at the ends (the disabled ◀ above is the first song) and fire the same step as the prevSong/nextSong/prevSection/nextSection global controls, so a footswitch and a mouse can never disagree about where a song ends."
       wide
     >
       <div class="bar-stack">

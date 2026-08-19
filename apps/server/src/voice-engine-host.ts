@@ -134,6 +134,13 @@ export class VoiceEngineHost {
       new state and the UI follows. Wired by `main.ts`. */
   onTransportChanged: (() => void) | null = null;
 
+  /** Called whenever the ENGINE moves the set: the absolute `recallSection` a client asked for,
+      AND the relative `nextSection` / `prevSong` a bound MIDI note or OSC address fired. The
+      relative ones resolve INSIDE the engine's queue drain (core `navigation.ts` explains why),
+      so no client can predict where they landed — this is the only way the chrome bars learn
+      that a footswitch just advanced the song. Wired by `main.ts` to broadcast `recalled`. */
+  onSectionRecalled: ((songId: string | null, sectionId: string | null) => void) | null = null;
+
   /** The live Show (retained so the global transport-recall handler can map a
    * Program Change / CC#0 / OSC index → song & section ids). null until first setShow. */
   private currentShow: voice.Show | null = null;
@@ -806,6 +813,12 @@ export class VoiceEngineHost {
       label: 'Section recalled',
       detail: `song=${d.songId ?? 'none'}; section=${d.sectionId ?? 'none'}`,
     });
+    // Follow the ENGINE's song, not just the ones a `recallSection` named. A `nextSong` global
+    // control moves the engine without any partial passing through `applyInput`, which used to
+    // leave this stale — so the very next CC #0 resolved its section index against the song the
+    // set had already left. The diagnostic is the one place both paths meet.
+    if (d.songId !== null) this.activeSongId = d.songId;
+    this.onSectionRecalled?.(d.songId, d.sectionId);
   }
 
   private effectLabels(ids: string[]): string[] {

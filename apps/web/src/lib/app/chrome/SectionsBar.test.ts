@@ -5,7 +5,8 @@ import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import SectionsBar from './SectionsBar.svelte';
 
 /* SectionsBar (tabbed chrome row 3): one chip per section of the active song,
-   the active section marked, a chip click recalling via setActiveSection. */
+   the active section marked, a chip click recalling via setActiveSection, and the
+   prev/next arrows that flank the strip. */
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
   return {
     activeSong: {
@@ -18,8 +19,11 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     },
     activeSectionId: 'sec-1',
     canEdit: true,
+    globalControls: {},
     setActiveSection: vi.fn(),
     addSongSection: vi.fn(),
+    canStepSetlist: () => true,
+    stepSetlist: vi.fn(),
     ...over,
   } as unknown as TriggerLab;
 }
@@ -59,6 +63,29 @@ describe('SectionsBar', () => {
     expect((within(viewer.container).getByLabelText('Add section') as HTMLButtonElement).disabled).toBe(true);
     const noSong = render(SectionsBar, { props: { store: mockStore({ activeSong: null }) } });
     expect((within(noSong.container).getByLabelText('Add section') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('steps a section with the flanking arrows', async () => {
+    const store = mockStore();
+    const { getByLabelText } = render(SectionsBar, { props: { store } });
+    await fireEvent.click(getByLabelText('Next section'));
+    await fireEvent.click(getByLabelText('Previous section'));
+    expect(store.stepSetlist).toHaveBeenNthCalledWith(1, 'section', 1);
+    expect(store.stepSetlist).toHaveBeenNthCalledWith(2, 'section', -1);
+  });
+
+  // The setlist CLAMPS rather than wrapping, so the end of a song must read as an end.
+  it('disables an arrow that has nowhere to step', () => {
+    const store = mockStore({ canStepSetlist: (_axis: string, delta: number) => delta > 0 });
+    const { getByLabelText } = render(SectionsBar, { props: { store } });
+    expect((getByLabelText('Previous section') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByLabelText('Next section') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  // Navigation is not authoring: a viewer following on a second screen may still walk the set.
+  it('leaves the arrows live for a viewer', () => {
+    const { getByLabelText } = render(SectionsBar, { props: { store: mockStore({ canEdit: false }) } });
+    expect((getByLabelText('Next section') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('shows the empty state when the active song has no sections (or no song)', () => {

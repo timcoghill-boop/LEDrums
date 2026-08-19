@@ -4,11 +4,19 @@
      the Perform pads and ←/→ keys drive. Editors also get the add-section
      affordance here (the twin of SongsBar's add-song), so a section can be made
      without first opening the Sections view; the new section becomes active. A
-     viewer sees it disabled with the reason, never hidden (edit-gate.ts). */
+     viewer sees it disabled with the reason, never hidden (edit-gate.ts).
+
+     The chips are FLANKED by prev/next arrows — the same step a bound MIDI note or OSC
+     address fires as the `prevSection` / `nextSection` global control, resolved through the
+     engine's own clamp rule (store.stepSetlist), so the mouse and the footswitch can never
+     disagree about where the end of a song is. The arrows sit OUTSIDE the scrolling chip
+     strip: a stepper that scrolls away with the thing it steps is not a stepper. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import NavArrow from '../../ui/NavArrow.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Plus from '@lucide/svelte/icons/plus';
+  import { BIND_INVITE, globalControlBindingSummary } from '../global-control-labels';
   import { NO_SONG_REASON, VIEWING_REASON } from './edit-gate';
 
   let { store }: { store: TriggerLab } = $props();
@@ -16,10 +24,20 @@
   const sections = $derived(store.activeSong?.sections ?? []);
   // Why "add section" is dead, in precedence order: read-only beats empty setlist.
   const addBlocked = $derived(!store.canEdit ? VIEWING_REASON : !store.activeSong ? NO_SONG_REASON : null);
+  const prevBinding = $derived(globalControlBindingSummary(store.globalControls.prevSection));
+  const nextBinding = $derived(globalControlBindingSummary(store.globalControls.nextSection));
 </script>
 
 <div class="bar" role="navigation" aria-label="Sections">
   <span class="rowlabel"><LayoutGrid size={13} aria-hidden="true" /> Sections</span>
+  <NavArrow
+    direction="prev"
+    unit="section"
+    disabled={!store.canStepSetlist('section', -1)}
+    binding={prevBinding}
+    bindingInvite={BIND_INVITE}
+    onclick={() => store.stepSetlist('section', -1)}
+  />
   <div class="chips">
     {#if sections.length === 0}
       <span class="none">No sections in this song</span>
@@ -44,6 +62,14 @@
       onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}
     />
   </div>
+  <NavArrow
+    direction="next"
+    unit="section"
+    disabled={!store.canStepSetlist('section', 1)}
+    binding={nextBinding}
+    bindingInvite={BIND_INVITE}
+    onclick={() => store.stepSetlist('section', 1)}
+  />
 </div>
 
 <style>

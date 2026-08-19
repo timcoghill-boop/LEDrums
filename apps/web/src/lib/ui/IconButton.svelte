@@ -13,6 +13,10 @@
     disabled?: boolean;
     /** Show the custom tooltip on hover (default true). */
     tooltip?: boolean;
+    /** Tooltip text while ENABLED, when it should say more than the accessible label —
+        e.g. an arrow naming the MIDI note that also fires it. `label` stays the aria-label
+        (a screen reader wants the verb, not the wiring), so the two must not be merged. */
+    tooltipText?: string;
     /** Why the button is disabled — shown as the tooltip INSTEAD of `label` while
         `disabled`. Without it a disabled button has no tooltip at all (a dead
         control that also explains nothing); with it, the affordance stays visible
@@ -30,6 +34,7 @@
     variant = 'ghost',
     disabled = false,
     tooltip = true,
+    tooltipText,
     disabledReason,
     tooltipSide = 'top',
     class: klass,
@@ -46,7 +51,9 @@
      `.ib:disabled` kills its pointer events, so the hover lands on Tooltip's own
      span anchor — the reason still shows for a dead control. -->
 {#if tooltip && (!disabled || disabledReason)}
-  <Tooltip text={disabled && disabledReason ? disabledReason : label} side={tooltipSide}>{@render btn()}</Tooltip>
+  <Tooltip text={disabled && disabledReason ? disabledReason : (tooltipText ?? label)} side={tooltipSide}>
+    {@render btn()}
+  </Tooltip>
 {:else}
   {@render btn()}
 {/if}

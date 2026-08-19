@@ -465,6 +465,11 @@ if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
 // Tap tempo (global control 9) changes the transport bpm server-side; rebroadcast the
 // state so every client's transport readout follows instead of silently drifting.
 if (voiceHost) voiceHost.onTransportChanged = () => broadcastJson(stateMessage());
+// The engine resolves relative navigation itself (a bound MIDI note / OSC address firing
+// `nextSection`), so clients cannot know where the set moved to — tell them, and their
+// Setlist + Sections bars follow the footswitch instead of showing a stale chip.
+if (voiceHost)
+  voiceHost.onSectionRecalled = (songId, sectionId) => broadcastJson({ t: 'recalled', songId, sectionId });
 else host.onFrame = (rgb) => broadcastBinary(rgb);
 host.setOutputMonitor(monitor);
 voiceHost?.setOutputMonitor(monitor);

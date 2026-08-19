@@ -426,6 +426,12 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     drumId: z.string().optional(),
   }).strict(),
   z.object({ t: z.literal('monitor'), event: monitorEventSchema }).strict(),
+  /* The engine has moved the set. Emitted on EVERY recall the engine performs, including
+     ones a client asked for — a `nextSection` global control resolves inside the engine's
+     queue drain (see core `navigation.ts`), so the web cannot predict where a MIDI/OSC nav
+     landed and has to be told. Clients apply it WITHOUT echoing a `recallSection` back, or
+     the two would ping-pong. */
+  z.object({ t: z.literal('recalled'), songId: z.string().nullable(), sectionId: z.string().nullable() }).strict(),
   z.object({ t: z.literal('projects'), names: z.array(z.string()) }).strict(),
   z.object({ t: z.literal('backups'), items: z.array(backupSnapshotMetaSchema) }).strict(),
   z.object({ t: z.literal('presence'), editorId: z.string().nullable(), youAreEditor: z.boolean(), clientCount: z.number() }).strict(),

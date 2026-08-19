@@ -7,7 +7,8 @@ import SongsBar from './SongsBar.svelte';
 /* SongsBar replaces the rail's SongRail in the tabbed chrome. These lock the
    chrome→store wiring: one chip per resolved setlist song (references wear a
    visible Library badge), the active chip marked, select/add/rename going to the
-   right store methods, and the editor affordances disabled (not hidden) for viewers. */
+   right store methods, the editor affordances disabled (not hidden) for viewers, and the
+   prev/next song arrows that flank the strip. */
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
   const songs = [
     { id: 's1', name: 'Song One', sections: [{}, {}] },
@@ -19,6 +20,9 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     resolvedSongs: songs,
     activeSongId: 's1',
     canEdit: true,
+    globalControls: {},
+    canStepSetlist: () => true,
+    stepSetlist: vi.fn(),
     createSong: vi.fn(),
     setActiveSong: vi.fn(),
     renameSong: vi.fn(),
@@ -116,5 +120,29 @@ describe('SongsBar', () => {
     // startRename defers a frame; give it one before asserting nothing mounted.
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     expect(queryByLabelText('Rename song')).toBeNull();
+  });
+
+  it('steps a song with the flanking arrows', async () => {
+    const store = mockStore();
+    const { getByLabelText } = render(SongsBar, { props: { store } });
+    await fireEvent.click(getByLabelText('Next song'));
+    await fireEvent.click(getByLabelText('Previous song'));
+    expect(store.stepSetlist).toHaveBeenNthCalledWith(1, 'song', 1);
+    expect(store.stepSetlist).toHaveBeenNthCalledWith(2, 'song', -1);
+  });
+
+  // The setlist CLAMPS rather than wrapping, so the first song must read as the first song.
+  it('disables an arrow that has nowhere to step', () => {
+    const store = mockStore({ canStepSetlist: (_axis: string, delta: number) => delta > 0 });
+    const { getByLabelText } = render(SongsBar, { props: { store } });
+    expect((getByLabelText('Previous song') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByLabelText('Next song') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  // Navigation is not authoring — a viewer may walk the set even though `+` is dead for them.
+  it('leaves the arrows live for a viewer', () => {
+    const { getByLabelText } = render(SongsBar, { props: { store: mockStore({ canEdit: false }) } });
+    expect((getByLabelText('Next song') as HTMLButtonElement).disabled).toBe(false);
+    expect((getByLabelText('Add song') as HTMLButtonElement).disabled).toBe(true);
   });
 });

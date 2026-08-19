@@ -16,6 +16,7 @@
   import ColorSwatch from '../../ui/ColorSwatch.svelte';
   import ColorField from '../../ui/ColorField.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import NavArrow from '../../ui/NavArrow.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
@@ -216,7 +217,7 @@
     <DemoCard
       title="Icon buttons · Tooltip"
       src={['lib/ui/IconButton', 'lib/ui/Tooltip']}
-      note="A gated action stays VISIBLE and goes disabled — never hidden. `disabledReason` replaces the tooltip with WHY, naming the remedy ('Viewing — take over to edit'); without it a disabled icon button has no tooltip at all. Hiding it instead makes the control flash on load and vanish once presence lands, which reads as a bug (2026-08-19, Tim — the chrome bars' add-song / add-section `+`)."
+      note="A gated action stays VISIBLE and goes disabled — never hidden. `disabledReason` replaces the tooltip with WHY, naming the remedy ('Viewing — take over to edit'); without it a disabled icon button has no tooltip at all. Hiding it instead makes the control flash on load and vanish once presence lands, which reads as a bug (2026-08-19, Tim — the chrome bars' add-song / add-section `+`). `tooltipText` enriches the hover copy while `label` stays the accessible verb — a screen reader wants the action, not the wiring."
     >
       <div class="comp-row">
         <IconButton icon={Play} label="Play" variant="solid" />
@@ -225,10 +226,25 @@
         <IconButton icon={Trash2} label="Delete" />
         <Separator orientation="vertical" />
         <IconButton icon={Plus} label="Add song" disabled disabledReason="Viewing — take over to edit" />
+        <IconButton icon={Play} label="Play" tooltipText="Play · MIDI C1" variant="soft" />
         <Separator orientation="vertical" />
         <Tooltip text="A custom tooltip">
           <button class="ghost">Hover me</button>
         </Tooltip>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Nav arrow — one step through an ordered list"
+      src="lib/ui/NavArrow"
+      note="The ◀ / ▶ that flank the Setlist and Sections chip rows. ONE arrow per instance, because the two ends of a stepper belong on either side of the thing being stepped. At the end of the list it goes DEAD rather than wrapping — the setlist clamps, so a stray extra tap can never teleport the rig back to song 1, and the disabled arrow is the visible half of that promise. Its tooltip also names the MIDI/OSC that fires the same step (Settings → Controls), because a drummer with both hands full needs the binding far more than the clickable arrow."
+    >
+      <div class="comp-row">
+        <NavArrow direction="prev" unit="song" disabled bindingInvite="bind in Settings → Controls" />
+        <NavArrow direction="next" unit="song" binding="MIDI C1 · /ledrums/next_song" />
+        <Separator orientation="vertical" />
+        <NavArrow direction="prev" unit="section" binding="MIDI B0" />
+        <NavArrow direction="next" unit="section" bindingInvite="bind in Settings → Controls" />
       </div>
     </DemoCard>
 

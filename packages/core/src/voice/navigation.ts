@@ -15,10 +15,34 @@
    Ends CLAMP, they do not wrap (locked with Trent 2026-08-12): on a live set a stray
    extra tap must never teleport the rig back to song 1.
    ============================================================================= */
-import type { Show } from './types';
 
 /** Which dimension of the setlist a relative move walks. */
 export type NavAxis = 'song' | 'section';
+
+/* The setlist this module walks is described STRUCTURALLY (ids and nesting only) rather
+   than as a `voice.Show`. Two callers need the same clamp semantics over two different
+   song shapes: the engine walks `ShowSong` (per-pad slot grids) and the web's chrome
+   bars walk the AUTHORED setlist `Song` (flat graph lists). Naming `Show` here would
+   have forced the web to fabricate a runtime Show just to ask "is there a next section",
+   and the tempting alternative — a second, web-local copy of the clamp rule — is exactly
+   how the arrows and the MIDI binding would come to disagree about what the end of a
+   song means. Navigation reads no field but `id`, so it asks for no more than that. */
+
+/** A section, as navigation sees it: an identity in an ordered list. */
+export interface NavSection {
+  id: string;
+}
+
+/** A song, as navigation sees it: an identity plus its ordered sections. */
+export interface NavSong {
+  id: string;
+  sections: readonly NavSection[];
+}
+
+/** Anything with an ordered song list — a `voice.Show` or the web's authored setlist. */
+export interface NavSetlist {
+  songs?: readonly NavSong[];
+}
 
 /** The song + section a navigation resolves to (the ids a `recallSection` needs). */
 export interface NavTarget {
@@ -58,7 +82,7 @@ function clampIndex(i: number, length: number): number | null {
  * fresh set moves 0 → 1 rather than doing nothing.
  */
 export function relativeNavTarget(
-  show: Show | null | undefined,
+  show: NavSetlist | null | undefined,
   position: NavPosition,
   axis: NavAxis,
   delta: number,
