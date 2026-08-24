@@ -89,16 +89,23 @@ describe('computeDelayMs — DELAY_DIVISIONS coverage', () => {
 });
 
 /* The dropdown order IS the vocabulary's order, so it is pinned here rather than left to a
-   reviewer's eye. Dotted and triplet values sit at their real durations (a dotted 1/4 is
-   longer than a triplet 1/2), so an insertion in the wrong family lands in the wrong place
-   and fails this. */
+   reviewer's eye. Three groups — straight, dotted, triplet — each running longest first. */
 describe('DELAY_DIVISIONS ordering', () => {
   const ms = (division: string) => computeDelayMs('beats', 0, division, 120, 4);
+  const group = (d: string) => (d.startsWith('dotted-') ? 1 : d.startsWith('triplet-') ? 2 : 0);
 
-  it('runs longest to shortest, with no ties', () => {
-    const durations = DELAY_DIVISIONS.map(ms);
-    for (let i = 1; i < durations.length; i++) {
-      expect(durations[i]!, `${DELAY_DIVISIONS[i]} after ${DELAY_DIVISIONS[i - 1]}`).toBeLessThan(durations[i - 1]!);
+  it('runs straight, then dotted, then triplet — never returning to an earlier group', () => {
+    const groups = DELAY_DIVISIONS.map(group);
+    expect(groups).toEqual([...groups].sort((a, b) => a - b));
+  });
+
+  it('descends within each group, with no ties', () => {
+    for (const g of [0, 1, 2]) {
+      const durations = DELAY_DIVISIONS.filter((d) => group(d) === g).map(ms);
+      expect(durations.length, `group ${g} is populated`).toBeGreaterThan(1);
+      for (let i = 1; i < durations.length; i++) {
+        expect(durations[i]!, `group ${g} index ${i}`).toBeLessThan(durations[i - 1]!);
+      }
     }
   });
 
@@ -113,9 +120,11 @@ describe('DELAY_DIVISIONS ordering', () => {
     expect(ms('triplet-1/32')).toBeCloseTo(41.67, 1);
   });
 
-  it('interleaves by duration rather than grouping by family', () => {
+  it('keeps each family whole, rather than interleaving by duration', () => {
     const at = (d: string) => DELAY_DIVISIONS.indexOf(d as (typeof DELAY_DIVISIONS)[number]);
-    expect(at('dotted-1/4'), 'a dotted 1/4 is longer than a triplet 1/2').toBeLessThan(at('triplet-1/2'));
-    expect(at('dotted-1/32'), 'a dotted 1/32 is longer than a triplet 1/16').toBeLessThan(at('triplet-1/16'));
+    // A dotted 1/4 is LONGER than a 1/2 triplet, yet sits below every straight value: the
+    // grouping is deliberate, not an ordering slip.
+    expect(at('1/32')).toBeLessThan(at('dotted-1/2'));
+    expect(at('dotted-1/32')).toBeLessThan(at('triplet-1/2'));
   });
 });

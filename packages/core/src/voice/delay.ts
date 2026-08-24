@@ -7,31 +7,36 @@
 
 /** The full canonical set of delay divisions the delay node supports. */
 /**
- * The canonical division vocabulary, ordered LONGEST FIRST — 4 bars at the top down to a
- * 32nd triplet at the bottom — so a dropdown reads like a note-value chart rather than a set
- * of families. Dotted and triplet values sit at their real durations (a dotted 1/4 is longer
- * than a triplet 1/2), which is why they are interleaved rather than grouped; `delay.test.ts`
- * asserts the order against `computeDelayMs` so an insertion in the wrong place fails.
+ * The canonical division vocabulary. Three groups — straight, then dotted, then triplet — each
+ * running LONGEST FIRST, so a dropdown opens on 4 bars and ends on a 32nd triplet.
+ *
+ * Grouped rather than strictly ordered by duration: sorted purely by length the dotted and
+ * triplet values interleave with the straight ones (a dotted 1/4 falls between 1/4 and 1/2),
+ * which reads as a jumble when what an author actually wants is "the 1/8 one" from a familiar
+ * column. `delay.test.ts` asserts both the group order and the descent inside each group.
  */
 export const DELAY_DIVISIONS = [
-  '4-bars', //        16 beats
-  '2-bars', //         8
-  '1-bar', //          4
-  'dotted-1/2', //     3
-  '1/2', //            2
-  'dotted-1/4', //     1.5
-  'triplet-1/2', //    1.333
-  '1/4', //            1
-  'dotted-1/8', //     0.75
-  'triplet-1/4', //    0.667
-  '1/8', //            0.5
-  'dotted-1/16', //    0.375
-  'triplet-1/8', //    0.333
-  '1/16', //           0.25
-  'dotted-1/32', //    0.1875
-  'triplet-1/16', //   0.167
-  '1/32', //           0.125
-  'triplet-1/32', //   0.083
+  // Straight — bars head the group, having no dotted or triplet form of their own.
+  '4-bars',
+  '2-bars',
+  '1-bar',
+  '1/2',
+  '1/4',
+  '1/8',
+  '1/16',
+  '1/32',
+  // Dotted — half as long again.
+  'dotted-1/2',
+  'dotted-1/4',
+  'dotted-1/8',
+  'dotted-1/16',
+  'dotted-1/32',
+  // Triplet — two thirds.
+  'triplet-1/2',
+  'triplet-1/4',
+  'triplet-1/8',
+  'triplet-1/16',
+  'triplet-1/32',
 ] as const;
 
 export type DelayDivision = (typeof DELAY_DIVISIONS)[number];
