@@ -257,7 +257,7 @@
           </Field>
         {/if}
 
-        <Field label="Move through">
+        <Field label="MOVE THROUGH">
           <SegmentedControl
             value={String(node.spliceDirection ?? 1)}
             options={SPLICE_DIRECTION_OPTS}
@@ -270,12 +270,12 @@
       {/if}
 
         {#if canCascade}
-          <Field layout="row" label="{unitNoun} offset">
+          <Field layout="row" label="{unitNoun.toUpperCase()} CHASE">
             <SegmentedControl
               value={offsetMode}
               options={SPLICE_OFFSET_MODE_OPTS}
               onChange={(v) => store.setSpliceSetting(node, { spliceOffsetMode: v as 'beats' | 'time' })}
-              ariaLabel="{unitNoun} offset mode"
+              ariaLabel="{unitNoun} chase mode"
             />
           </Field>
 
@@ -285,7 +285,7 @@
                 value={node.spliceOffsetDivision ?? SPLICE_NO_DIVISION}
                 options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
                 onChange={(v) => store.setSpliceSetting(node, { spliceOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
-                ariaLabel="{unitNoun} offset division"
+                ariaLabel="{unitNoun} chase division"
               />
             </Field>
           {:else}
@@ -297,7 +297,7 @@
                 max={60000}
                 step={1}
                 onCommit={(v) => store.setSpliceSetting(node, { spliceOffsetMs: Number(v) })}
-                ariaLabel="{unitNoun} offset milliseconds"
+                ariaLabel="{unitNoun} chase milliseconds"
               />
             </Field>
           {/if}
@@ -318,7 +318,7 @@
         {/if}
 
         {#if canCascade}
-          <Field label="Move through mode">
+          <Field label="MOVE THROUGH MODE">
             <SegmentedControl
               value={waitMode}
               options={SPLICE_WAIT_MODE_OPTS}
@@ -330,7 +330,7 @@
         {/if}
 
         {#if waitMode !== 'lit'}
-          <Field layout="row" label="Colour chase">
+          <Field layout="row" label="COLOUR CHASE">
             <SegmentedControl
               value={colorOffsetMode}
               options={SPLICE_OFFSET_MODE_OPTS}
@@ -379,7 +379,7 @@
         {/if}
 
         {#if canCascadeDrums}
-          <Field layout="row" label="Drum chase">
+          <Field layout="row" label="DRUM CHASE">
             <SegmentedControl
               value={drumOffsetMode}
               options={SPLICE_OFFSET_MODE_OPTS}
@@ -430,7 +430,7 @@
         <p class="hint">{SPLICE_CHASE_HINTS[chase]}</p>
         {#if canCascade}
           <p class="hint">
-            An offset starts each {unitNoun.toLowerCase()} later than the one before it, in the order above —
+            A chase starts each {unitNoun.toLowerCase()} later than the one before it, in the order above —
             so the motion travels {partition === 'drum' ? 'across the kit' : 'up the drum'} instead of every
             {unitNoun.toLowerCase()} moving together.
           </p>
