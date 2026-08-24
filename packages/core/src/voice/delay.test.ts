@@ -87,3 +87,35 @@ describe('computeDelayMs — DELAY_DIVISIONS coverage', () => {
     expect(computeDelayMs('beats', 0, '', 120)).toBeCloseTo(500, 6);
   });
 });
+
+/* The dropdown order IS the vocabulary's order, so it is pinned here rather than left to a
+   reviewer's eye. Dotted and triplet values sit at their real durations (a dotted 1/4 is
+   longer than a triplet 1/2), so an insertion in the wrong family lands in the wrong place
+   and fails this. */
+describe('DELAY_DIVISIONS ordering', () => {
+  const ms = (division: string) => computeDelayMs('beats', 0, division, 120, 4);
+
+  it('runs longest to shortest, with no ties', () => {
+    const durations = DELAY_DIVISIONS.map(ms);
+    for (let i = 1; i < durations.length; i++) {
+      expect(durations[i]!, `${DELAY_DIVISIONS[i]} after ${DELAY_DIVISIONS[i - 1]}`).toBeLessThan(durations[i - 1]!);
+    }
+  });
+
+  it('starts at 4 bars and ends at a 32nd triplet', () => {
+    expect(DELAY_DIVISIONS[0]).toBe('4-bars');
+    expect(DELAY_DIVISIONS[DELAY_DIVISIONS.length - 1]).toBe('triplet-1/32');
+  });
+
+  it('resolves the 32nd family, straight, dotted and triplet', () => {
+    expect(ms('1/32')).toBe(62.5); // a quarter is 500ms at 120bpm
+    expect(ms('dotted-1/32')).toBe(93.75);
+    expect(ms('triplet-1/32')).toBeCloseTo(41.67, 1);
+  });
+
+  it('interleaves by duration rather than grouping by family', () => {
+    const at = (d: string) => DELAY_DIVISIONS.indexOf(d as (typeof DELAY_DIVISIONS)[number]);
+    expect(at('dotted-1/4'), 'a dotted 1/4 is longer than a triplet 1/2').toBeLessThan(at('triplet-1/2'));
+    expect(at('dotted-1/32'), 'a dotted 1/32 is longer than a triplet 1/16').toBeLessThan(at('triplet-1/16'));
+  });
+});

@@ -111,6 +111,13 @@ describe('divisions', () => {
     for (const v of ['1/2', '1/4', '1/8', '1/16', '1-bar', '2-bars', '4-bars']) expect(values, v).toContain(v);
   });
 
+  it('offers the 32nd family, and runs longest to shortest', () => {
+    const values = DIVISION_OPTS.map((o) => o.value);
+    for (const v of ['1/32', 'dotted-1/32', 'triplet-1/32']) expect(values, v).toContain(v);
+    expect(values[0], 'longest first').toBe('4-bars');
+    expect(values[values.length - 1], 'shortest last').toBe('triplet-1/32');
+  });
+
   it('labels bar lengths readably', () => {
     const label = (v: string) => DIVISION_OPTS.find((o) => o.value === v)?.label;
     expect(label('1-bar')).toBe('1 bar');

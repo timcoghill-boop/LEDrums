@@ -6,24 +6,32 @@
  */
 
 /** The full canonical set of delay divisions the delay node supports. */
+/**
+ * The canonical division vocabulary, ordered LONGEST FIRST — 4 bars at the top down to a
+ * 32nd triplet at the bottom — so a dropdown reads like a note-value chart rather than a set
+ * of families. Dotted and triplet values sit at their real durations (a dotted 1/4 is longer
+ * than a triplet 1/2), which is why they are interleaved rather than grouped; `delay.test.ts`
+ * asserts the order against `computeDelayMs` so an insertion in the wrong place fails.
+ */
 export const DELAY_DIVISIONS = [
-  '1/2',
-  '1/4',
-  '1/8',
-  '1/16',
-  'dotted-1/2',
-  'dotted-1/4',
-  'dotted-1/8',
-  'dotted-1/16',
-  'triplet-1/2',
-  'triplet-1/4',
-  'triplet-1/8',
-  'triplet-1/16',
-  // Bar-length values, for movement that spans phrases rather than beats. A bar is
-  // `beatsPerBar` quarters, so unlike every value above these depend on the time signature.
-  '1-bar',
-  '2-bars',
-  '4-bars',
+  '4-bars', //        16 beats
+  '2-bars', //         8
+  '1-bar', //          4
+  'dotted-1/2', //     3
+  '1/2', //            2
+  'dotted-1/4', //     1.5
+  'triplet-1/2', //    1.333
+  '1/4', //            1
+  'dotted-1/8', //     0.75
+  'triplet-1/4', //    0.667
+  '1/8', //            0.5
+  'dotted-1/16', //    0.375
+  'triplet-1/8', //    0.333
+  '1/16', //           0.25
+  'dotted-1/32', //    0.1875
+  'triplet-1/16', //   0.167
+  '1/32', //           0.125
+  'triplet-1/32', //   0.083
 ] as const;
 
 export type DelayDivision = (typeof DELAY_DIVISIONS)[number];
@@ -37,6 +45,7 @@ export type DelayDivision = (typeof DELAY_DIVISIONS)[number];
  *     - `1/4`  → `60000 / bpm`  (quarter note)
  *     - `1/8`  → `30000 / bpm`  (eighth note)
  *     - `1/16` → `15000 / bpm`  (sixteenth note)
+ *     - `1/32` → `7500 / bpm`   (thirty-second note)
  *     - `1-bar` / `2-bars` / `4-bars` → whole bars, i.e. `beatsPerBar` quarters each.
  *       These are the only values that read the time signature; everything else is
  *       signature-independent, which is why `beatsPerBar` merely defaults to 4.
@@ -64,6 +73,7 @@ export function computeDelayMs(
   let base: number;
   if (clean === '1/8') base = quarter / 2;
   else if (clean === '1/16') base = quarter / 4;
+  else if (clean === '1/32') base = quarter / 8;
   else if (clean === '1/2') base = quarter * 2;
   else if (clean === '1-bar') base = bar;
   else if (clean === '2-bars') base = bar * 2;
