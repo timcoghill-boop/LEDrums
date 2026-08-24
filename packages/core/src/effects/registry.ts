@@ -47,6 +47,9 @@ import { gravityWells } from './impl/gravity-wells';
 import { breathingKit } from './impl/breathing-kit';
 import { tempSweep } from './impl/temp-sweep';
 import { velocityFlames } from './impl/velocity-flames';
+// Fire pair: a crackling sparkler and its plainer sibling.
+import { sparkler } from './impl/sparkler';
+import { flickerEffect } from './impl/flicker-effect';
 import { hueRotateKit } from './impl/hue-rotate-kit';
 import { waveCollapse } from './impl/wave-collapse';
 // Emission-based 3D batch (2026-07-05): per-hit emissions that layer instead of stacking.
@@ -103,6 +106,8 @@ const ALL: EffectGenerator<any>[] = [
   breathingKit,
   tempSweep,
   velocityFlames,
+  sparkler,
+  flickerEffect,
   hueRotateKit,
   waveCollapse,
   chaseBands,

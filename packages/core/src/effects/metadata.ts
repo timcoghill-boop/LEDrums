@@ -46,6 +46,14 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
     description: 'Each hit tops up a per-drum energy that decays every frame — time your hits like pushing a swing and the light keeps climbing; let it ride and it falls back.',
     tags: ['hit', 'per-drum', 'stateful'],
   },
+  sparkler: {
+    description: 'A hit lights the fuse and the drum burns like a firework sparkler — white-hot sparks snapping on and cooling through yellow to orange over an ember bed, thinning as the stick spends itself.',
+    tags: ['hit', 'per-drum', 'sparkle', 'particle', 'seeded'],
+  },
+  flicker: {
+    description: 'The plain sibling of Sparkler: one warm light per struck drum that guts and flares like a flame in a draught, with no individual sparks — reach for it when a hit should read as a single body of light.',
+    tags: ['hit', 'per-drum', 'wash'],
+  },
   'velocity-flames': {
     description: 'Each drum grows a flame from the bottom hoop whose height tracks your most-recent hit velocity, flickering hot white at the base to deep red at the tip — play harder, burn taller.',
     tags: ['hit', 'per-drum', 'hoop-aware'],

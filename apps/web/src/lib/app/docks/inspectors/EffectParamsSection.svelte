@@ -187,14 +187,18 @@
 
   <Disclosure
     label={eff.name}
-    count={grouped.specific.length}
+    count={grouped.specific.filter((p) => !envelopeKeys.includes(p.key)).length}
     open={foldOpen}
     onToggle={(v) => {
       if (!filtering) paramFold.open = v;
     }}
   >
     <div class="rows">
-      {#each grouped.specific as spec (spec.key)}
+      <!-- Excludes the envelope's own rows for the same reason the common list above does: an
+           effect whose life key is not one the family matcher recognises lands in the FOLD
+           rather than the common section, and without this it renders twice — once in the
+           envelope block, once here. -->
+      {#each grouped.specific.filter((p) => !envelopeKeys.includes(p.key)) as spec (spec.key)}
         <ParamRow {store} {node} {spec} {live} />
       {:else}
         <p class="none">
