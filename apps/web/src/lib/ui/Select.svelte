@@ -21,6 +21,7 @@
   import { type Component } from 'svelte';
   import SegmentedControl from './SegmentedControl.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import { releaseFocusAfterPointerCommit } from './release-focus';
   import Check from '@lucide/svelte/icons/check';
 
   type Option = { value: string; label: string; icon?: Component; iconColor?: string; disabled?: boolean };
@@ -52,10 +53,23 @@
   const SEGMENT_MAX = 4;
   const segmented = $derived(segment && options.length > 1 && options.length <= SEGMENT_MAX && !!selected);
 
+  /**
+   * Commit a choice and RELEASE THE KEYBOARD.
+   *
+   * This app's number keys are performance keys — 1–9 fire the active section's graphs. A
+   * control that keeps focus after being clicked silently swallows them: the bits-ui trigger
+   * implements combobox typeahead, and most option labels here start with a digit (`1/2`,
+   * `1/4`, `2 bars`), so pressing 1 to fire a cue re-picks the value instead. Enter re-opens
+   * the list for the same reason. Once a value is chosen there is nothing left to do on the
+   * trigger, so hand focus back rather than leave it parked there.
+   */
   function choose(v: string): void {
     value = v;
     onChange?.(v);
+    releaseFocusAfterPointerCommit();
   }
+
+
 </script>
 
 {#if segmented}
@@ -71,7 +85,7 @@
   />
 {:else}
 <span class={['sel', klass]}>
-  <Select.Root type="single" bind:value items={options} onValueChange={onChange} {disabled}>
+  <Select.Root type="single" bind:value items={options} onValueChange={choose} {disabled}>
     <Select.Trigger class="sel-trigger" aria-label={ariaLabel}>
       <span class="sel-lead">
         {#if selected?.icon}{@const I = selected.icon}<I size={14} style={selected.iconColor ? `color:${selected.iconColor}` : undefined} aria-hidden="true" />{/if}

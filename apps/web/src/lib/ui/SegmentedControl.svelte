@@ -3,6 +3,7 @@
      to "" when the active item is re-clicked; we mirror the value and refuse
      that so exactly one option stays selected. Pass `value` + `onChange`. */
   import { ToggleGroup } from 'bits-ui';
+  import { releaseFocusAfterPointerCommit } from './release-focus';
   import { untrack, type Component } from 'svelte';
 
   type Option = { value: string; label: string; icon?: Component; disabled?: boolean };
@@ -28,6 +29,9 @@
       return;
     }
     onChange?.(v);
+    // Give the keyboard back after a click: a ToggleGroup claims the arrows for roving focus,
+    // which would otherwise eat the section-stepping keys. Keyboard users keep focus.
+    releaseFocusAfterPointerCommit();
   }
 </script>
 

@@ -91,3 +91,28 @@ describe('CommitInput wheel-adjust', () => {
     expect(onCommit).toHaveBeenCalledWith('11');
   });
 });
+
+/* Return means "done with this field". If it committed but kept focus, the next number key
+   would be typed into the field instead of firing a cue — the same keyboard theft a Select
+   trigger causes, and the reason Trent saw it "also when I press return to confirm a value". */
+describe('CommitInput — hands the keyboard back on Enter', () => {
+  it('releases focus after committing with Enter', async () => {
+    const onCommit = vi.fn();
+    const { container } = render(CommitInput, { props: { value: '10', onCommit, ariaLabel: 'Attack' } });
+    const input = container.querySelector('input')!;
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    await fireEvent.input(input, { target: { value: '40' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCommit, 'the value still commits').toHaveBeenCalledWith('40');
+    expect(document.activeElement, 'and the field lets go').not.toBe(input);
+  });
+
+  it('releases focus after cancelling with Escape', async () => {
+    const { container } = render(CommitInput, { props: { value: '10', onCommit: vi.fn(), ariaLabel: 'Attack' } });
+    const input = container.querySelector('input')!;
+    input.focus();
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(input);
+  });
+});

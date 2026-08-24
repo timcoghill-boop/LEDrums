@@ -7,6 +7,7 @@
   import { TriggerLab } from './lib/trigger-lab/store.svelte';
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
+  import { decidePerformanceKey } from './lib/app/performance-key';
   import { isEditableShortcutTarget, platformShortcutModifier } from './lib/app/primary-shortcut';
   import { decideDeleteKey, isDeleteKey } from './lib/app/delete-key';
   import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
@@ -100,19 +101,29 @@
       }
       return;
     }
-    if (editable || settingsOpen) return;
-    if (/^[0-9]$/.test(e.key)) {
-      const index = e.key === '0' ? 9 : Number(e.key) - 1;
-      store.fireSectionGraph(index);
+    const perf = decidePerformanceKey({
+      key: e.key,
+      isEditableTarget: editable,
+      settingsOpen,
+      inFlowCanvas: !!el?.closest('.svelte-flow'),
+    });
+    // CLAIM before acting. This listener is capture-phase, so stopping the event here is what
+    // keeps the focused control from acting on the same key straight after — a Select trigger
+    // typeahead-ing over its digit-leading labels, a segmented control taking the arrows for
+    // roving focus. Handling without claiming let both happen at once.
+    if (perf.claim) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (perf.fireGraphIndex !== undefined) {
+      store.fireSectionGraph(perf.fireGraphIndex);
       return;
     }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
+    if (perf.sectionStep !== undefined) {
       const sections = store.activeSong?.sections ?? [];
       if (sections.length === 0) return;
       const cur = sections.findIndex((s) => s.id === store.activeSectionId);
-      const step = e.key === 'ArrowRight' ? 1 : -1;
-      const next = sections[(cur + step + sections.length) % sections.length];
+      const next = sections[(cur + perf.sectionStep + sections.length) % sections.length];
       if (next) store.setActiveSection(next.id);
     }
   }

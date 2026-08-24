@@ -61,3 +61,30 @@ describe('Select — segmented at four options or fewer', () => {
     for (const label of ['Opt 0', 'Opt 1', 'Opt 2']) expect(getByText(label)).toBeTruthy();
   });
 });
+
+/* The performance keys (1–9 fire the active section's graphs) are window-level, so a control
+   that keeps focus after a click swallows them. A dropdown trigger is the worst offender: it
+   runs combobox typeahead, and the division labels this app puts in Selects all START with a
+   digit ("1/2", "1/4", "2 bars"), so reaching for a cue key re-picked the value instead. */
+describe('Select — hands the keyboard back', () => {
+  it('releases focus when a segment is chosen by pointer', async () => {
+    const { container } = render(Select, { props: { value: 'o0', options: OPTS(3), ariaLabel: 'Pick' } });
+    const buttons = [...container.querySelectorAll('button')];
+    const target = buttons[1]!;
+    target.focus();
+    expect(document.activeElement).toBe(target);
+    await fireEvent.click(target);
+    expect(document.activeElement, 'focus is no longer parked on the control').not.toBe(target);
+  });
+
+  it('keeps focus for a keyboard user, who is still navigating', async () => {
+    const { container } = render(Select, { props: { value: 'o0', options: OPTS(3), ariaLabel: 'Pick' } });
+    const buttons = [...container.querySelectorAll('button')];
+    const target = buttons[1]!;
+    target.focus();
+    // :focus-visible is the browser's own modality signal; jsdom cannot compute it, so pin it.
+    vi.spyOn(target, 'matches').mockImplementation((sel: string) => sel === ':focus-visible');
+    await fireEvent.click(target);
+    expect(document.activeElement, 'left alone mid-navigation').toBe(target);
+  });
+});
