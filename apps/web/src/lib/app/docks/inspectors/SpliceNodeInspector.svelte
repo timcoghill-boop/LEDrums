@@ -186,7 +186,7 @@
     </section>
 
     <section class="group">
-      <h4 class="grouptitle">Move</h4>
+      <h4 class="grouptitle">Move around</h4>
 
       <Field label="Motion">
         <SegmentedControl
@@ -257,12 +257,12 @@
           </Field>
         {/if}
 
-        <Field label="Direction">
+        <Field label="Move through">
           <SegmentedControl
             value={String(node.spliceDirection ?? 1)}
             options={SPLICE_DIRECTION_OPTS}
             onChange={(v) => store.setSpliceSetting(node, { spliceDirection: v === '-1' ? -1 : 1 })}
-            ariaLabel="Splice direction"
+            ariaLabel="Splice move through"
           />
         </Field>
 
@@ -318,24 +318,24 @@
         {/if}
 
         {#if canCascade}
-          <Field label="Before its turn">
+          <Field label="Move through mode">
             <SegmentedControl
               value={waitMode}
               options={SPLICE_WAIT_MODE_OPTS}
               onChange={(v) => store.setSpliceSetting(node, { spliceWaitMode: v as voice.SpliceWaitMode })}
-              ariaLabel="Splice wait mode"
+              ariaLabel="Splice move through mode"
             />
           </Field>
           <p class="hint">{SPLICE_WAIT_MODE_HINTS[waitMode]}</p>
         {/if}
 
         {#if waitMode !== 'lit'}
-          <Field layout="row" label="Colour offset">
+          <Field layout="row" label="Colour chase">
             <SegmentedControl
               value={colorOffsetMode}
               options={SPLICE_OFFSET_MODE_OPTS}
               onChange={(v) => store.setSpliceSetting(node, { spliceColorOffsetMode: v as 'beats' | 'time' })}
-              ariaLabel="Colour offset mode"
+              ariaLabel="Colour chase mode"
             />
           </Field>
 
@@ -345,7 +345,7 @@
                 value={node.spliceColorOffsetDivision ?? SPLICE_NO_DIVISION}
                 options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
                 onChange={(v) => store.setSpliceSetting(node, { spliceColorOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
-                ariaLabel="Colour offset division"
+                ariaLabel="Colour chase division"
               />
             </Field>
           {:else}
@@ -357,7 +357,7 @@
                 max={60000}
                 step={1}
                 onCommit={(v) => store.setSpliceSetting(node, { spliceColorOffsetMs: Number(v) })}
-                ariaLabel="Colour offset milliseconds"
+                ariaLabel="Colour chase milliseconds"
               />
             </Field>
           {/if}
@@ -379,12 +379,12 @@
         {/if}
 
         {#if canCascadeDrums}
-          <Field layout="row" label="Drum offset">
+          <Field layout="row" label="Drum chase">
             <SegmentedControl
               value={drumOffsetMode}
               options={SPLICE_OFFSET_MODE_OPTS}
               onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetMode: v as 'beats' | 'time' })}
-              ariaLabel="Drum offset mode"
+              ariaLabel="Drum chase mode"
             />
           </Field>
 
@@ -394,7 +394,7 @@
                 value={node.spliceDrumOffsetDivision ?? SPLICE_NO_DIVISION}
                 options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
                 onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
-                ariaLabel="Drum offset division"
+                ariaLabel="Drum chase division"
               />
             </Field>
           {:else}
@@ -406,7 +406,7 @@
                 max={60000}
                 step={1}
                 onCommit={(v) => store.setSpliceSetting(node, { spliceDrumOffsetMs: Number(v) })}
-                ariaLabel="Drum offset milliseconds"
+                ariaLabel="Drum chase milliseconds"
               />
             </Field>
           {/if}
@@ -422,7 +422,7 @@
           </Field>
 
           <p class="hint">
-            A drum offset sends the movement round the kit one drum after another, on top of how it
+            A drum chase sends the movement round the kit one drum after another, on top of how it
             travels up each drum. Set both and it spirals; set only this one and whole drums light in turn.
           </p>
         {/if}
