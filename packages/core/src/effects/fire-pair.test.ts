@@ -125,3 +125,72 @@ describe('sparkler vs flicker — the difference that makes them two effects', (
     expect(sparks(1500, 1450)).toBeLessThan(sparks(60, 30));
   });
 });
+
+/* The Random param. It means the same thing in both — how unpredictable this is — but each
+   effect has its own axis for it: WHERE sparks land, and HOW STEADY the flame is. Both ends
+   have to be real, so these measure the property rather than just checking the value moved. */
+describe('random', () => {
+  const m = model();
+  const d0 = () => m.drumById.get('d0')!;
+
+  /** Mean absolute gap-to-gap difference between lit pixels — low means evenly spread. */
+  function gapVariance(levels: number[]): number {
+    const drum = d0();
+    const lit: number[] = [];
+    for (let i = drum.pixelStart; i < drum.pixelStart + drum.pixelCount; i++) if (levels[i]! > 0.3) lit.push(i);
+    if (lit.length < 3) return 0;
+    const gaps = lit.slice(1).map((v, i) => v - lit[i]!);
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    return gaps.reduce((a, g) => a + Math.abs(g - mean), 0) / gaps.length;
+  }
+
+  it('sparkler: at 0 the sparks are evenly spread, at 1 they scatter', () => {
+    const ordered = gapVariance(frame(sparkler, m, 60, [hit('d0', 25)], { random: 0, crackle: 0 }));
+    const scattered = gapVariance(frame(sparkler, m, 60, [hit('d0', 25)], { random: 1, crackle: 0 }));
+    expect(ordered, 'an ordered pattern has near-uniform gaps').toBeLessThan(scattered);
+  });
+
+  it('sparkler: both ends still light sparks — neither is a dead setting', () => {
+    for (const random of [0, 0.5, 1]) {
+      const levels = frame(sparkler, m, 60, [hit('d0', 25)], { random });
+      expect(levels.filter((v) => v > 0.3).length, `random ${random}`).toBeGreaterThan(0);
+    }
+  });
+
+  /** The largest single-frame jump in brightness over a second, sampled finely (5ms). A sine
+      cannot jump: its per-frame move is bounded by its slope, so a smooth flame stays small
+      however fast it breathes. A stepped value can jump its whole range in one frame. That
+      gap is what "erratic" actually means here, and sampling coarsely would hide it. */
+  function biggestJump(random: number): number {
+    const px = d0().pixelStart;
+    let prev = 0;
+    let worst = 0;
+    for (let t = 0; t <= 1000; t += 5) {
+      const v = frame(flickerEffect, m, t, [hit('d0', 0)], { random, spread: 0, depth: 1, decayMs: 100000 })[px]!;
+      if (t > 0) worst = Math.max(worst, Math.abs(v - prev));
+      prev = v;
+    }
+    return worst;
+  }
+
+  it('flicker: at 0 the flame breathes smoothly, at 1 it jumps', () => {
+    expect(biggestJump(0) * 2, 'a sine cannot jump — it is bounded by its slope').toBeLessThan(biggestJump(1));
+  });
+
+  it('flicker: random does not smuggle in per-pixel variation that Spread was closed to avoid', () => {
+    const levels = frame(flickerEffect, m, 60, [hit('d0', 25)], { random: 1, spread: 0, depth: 0.6 });
+    const drum = d0();
+    const slice = levels.slice(drum.pixelStart, drum.pixelStart + drum.pixelCount);
+    expect(Math.max(...slice) - Math.min(...slice), 'still one body').toBeLessThan(0.01);
+  });
+
+  it('both replay identically at any setting', () => {
+    for (const gen of [sparkler, flickerEffect]) {
+      for (const random of [0, 0.5, 1]) {
+        const a = frame(gen, m, 137, [hit('d0', 55)], { random });
+        const b = frame(gen, m, 137, [hit('d0', 55)], { random });
+        expect(a, `${gen.id} at ${random}`).toEqual(b);
+      }
+    }
+  });
+});

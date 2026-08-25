@@ -3,6 +3,7 @@ import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR, VISIBLE_CUTOFF } from '../visibility';
 import { lifeFade } from '../life-fade';
+import { hash01, ordered01 } from '../hash';
 
 /**
  * Sparkler: a hit lights the fuse and the drum burns like a firework sparkler — a hot core
@@ -19,18 +20,6 @@ import { lifeFade } from '../life-fade';
  * and a roll on one drum keeps it alight.
  */
 
-/**
- * Deterministic 0..1 from two integers — a 32-bit avalanche mix. Local to this effect rather
- * than a seeded generator in state, because sparks are sampled per pixel per frame and a
- * stream would make each spark's timing depend on how many frames had been drawn before it.
- */
-function hash01(a: number, b: number): number {
-  let h = (Math.imul(a, 0x27d4eb2d) ^ Math.imul(b + 0x9e3779b9, 0x85ebca6b)) >>> 0;
-  h = Math.imul(h ^ (h >>> 15), 0x2545f491) >>> 0;
-  h = (h ^ (h >>> 13)) >>> 0;
-  return h / 0x100000000;
-}
-
 export const sparkler: EffectGenerator = {
   id: 'sparkler',
   name: 'Sparkler',
@@ -46,6 +35,7 @@ export const sparkler: EffectGenerator = {
     { key: 'density', label: 'Sparks', type: 'number', default: 0.35, min: 0.01, max: 1, step: 0.01 },
     { key: 'sparkMs', label: 'Spark Life', type: 'number', default: 90, min: 10, max: 600, unit: 'ms' },
     { key: 'crackle', label: 'Crackle', type: 'number', default: 0.7, min: 0, max: 1, step: 0.01 },
+    { key: 'random', label: 'Random', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'core', label: 'Core Glow', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01 },
     { key: 'hue', label: 'Hue', type: 'number', default: 42, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
@@ -56,6 +46,11 @@ export const sparkler: EffectGenerator = {
     const density = clamp01(pnum(params, 'density', 0.35));
     const sparkMs = Math.max(1, pnum(params, 'sparkMs', 90));
     const crackle = clamp01(pnum(params, 'crackle', 0.7));
+    // WHERE the sparks land, as against `crackle`, which is WHEN they fire. At 0 they pick
+    // evenly spread pixels and march in an ordered pattern; at 1 they scatter. Blending an
+    // ordered sequence with a hash is the standard way to make that a dial rather than a
+    // switch — neither end is a special case in the code below.
+    const random = clamp01(pnum(params, 'random', 1));
     const core = clamp01(pnum(params, 'core', 0.25));
     const hue = pnum(params, 'hue', 42);
     // Scales the intrinsic hot-core ramp rather than replacing it, so a fresh spark still
@@ -87,7 +82,8 @@ export const sparkler: EffectGenerator = {
       for (const back of [0, 1]) {
         const bucket = nowBucket - back;
         // Chance falls with the burn, so the stick throws fewer sparks as it spends itself.
-        if (hash01(p.id, bucket) > density * burn) continue;
+        const pick = lerp(ordered01(p.id, bucket), hash01(p.id, bucket), random);
+        if (pick > density * burn) continue;
         // Stagger the ignition inside its window, or every spark in a bucket fires together.
         const offset = crackle * hash01(p.id ^ 0x5bf03635, bucket);
         const age = back + phase - offset;
