@@ -22,6 +22,7 @@ import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
 import { createGeneratorBridge } from './generator-bridge';
 import { applyModifierChain } from '../modifiers/chain';
+import { materialCycleMs } from '../effects/voice-life';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
 import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
@@ -39,6 +40,7 @@ import {
   spliceOrderIndex,
   splicePulseCycleMs,
   spliceRotationPx,
+  spliceMaterialTimeMs,
   spliceSourceOffset,
   spliceTintColour,
   unitCascadeDelayMs,
@@ -316,8 +318,17 @@ export function createDefaultCompositor(): Compositor {
             }
             const memberVoice = mixInputVoice(member, v);
             const memberCtx = modCtxFor(memberVoice, frameCtx);
+            // Material regenerates on the effect's own life rather than dying once — see
+            // `spliceMaterialTimeMs`. Shifting the CLOCK does it: the bridge derives both the
+            // trigger age and a voice-timebase generator's transport from this one number, so
+            // the two can't fall out of step.
+            const memberTime = spliceMaterialTimeMs(
+              timeMs,
+              memberVoice.bornAtMs,
+              materialCycleMs(memberVoice.generatorId, member.liveParams, frame.transport.bpm),
+            );
             for (const range of ranges) {
-              generators.renderVoice(memberVoice, model, timeMs, 1, range.start, range.end, buffers[i]!, memberCtx);
+              generators.renderVoice(memberVoice, model, memberTime, 1, range.start, range.end, buffers[i]!, memberCtx);
             }
             syncMixInputState(member, memberVoice);
           }

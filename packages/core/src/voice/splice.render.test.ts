@@ -1041,6 +1041,37 @@ describe('splice — effects inside a splice', () => {
     expect(stranded, 'effects that cannot leave the drum they were born on').toEqual([]);
   });
 
+// A cascade crosses the kit in whatever the author asked for -- Tim's node is four drums a
+  // half note apart, five seconds -- while a hit-driven effect decays on its own clock in
+  // under one. The material used to die on the first drum, so the chase "barely reached the
+  // next drums"; it now regenerates on the effect's decay constant, so the far side of a long
+  // cascade is still lit by something. Rendering each unit on its own delayed clock would be
+  // the literal answer and costs 64 full renders a frame on a four-drum kit -- 24ms for a
+  // plasma, against a 16.7ms budget.
+  it('still has material to carry when a long cascade reaches the far drums', () => {
+    const fast: EffectDef = { ...drumEffect('fx'), generatorId: 'sparkler' };
+    const graph = spliceGraph([{ effectId: 'fx' }], {
+      spliceCount: 1,
+      splicePartition: 'hoop',
+      spliceDrumOffsetMode: 'time',
+      spliceDrumOffsetMs: 1500, // the snare's turn comes long after a sparkler has burnt out
+      spliceWaitMode: 'pulse',
+      spliceAttackMs: 200,
+      spliceHoldMs: 400,
+      spliceReleaseMs: 400,
+      mode: 'loop',
+    });
+    // Scanned across the snare's whole turn rather than sampled at one instant: sparks are
+    // sparse, so any single frame can miss a 4-pixel band by chance. The claim is that the
+    // far drum lights while its turn lasts, not that it is lit at one chosen millisecond.
+    let peak = 0;
+    for (let t = 1500; t <= 2400; t += 50) {
+      const { rgb } = render(graph, [fast], t);
+      for (let i = 8; i < 16; i++) peak = Math.max(peak, rgb(i)[0], rgb(i)[1], rgb(i)[2]);
+    }
+    expect(peak, 'the far drum is lit when its turn comes').toBeGreaterThan(0.3);
+  });
+
   it('is deterministic: the same show and the same hits render the same frame twice', () => {
     const graph = spliceGraph([{ color: '#ff0000' }, { effectId: 'fx' }, {}], { spliceJitter: 0.7, spliceChase: 'smooth', spliceRateMs: 90, spliceRateMode: 'time' });
     const a = render(graph, [litEffect('fx')], 123);

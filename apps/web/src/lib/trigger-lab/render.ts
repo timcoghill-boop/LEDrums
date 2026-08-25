@@ -9,6 +9,7 @@ import {
   applyModifierChain,
   compositeInto,
   defaultParams as genDefaultParams,
+  materialCycleMs,
   tryGetEffect,
   voice,
   type RenderContext,
@@ -126,7 +127,14 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
     const bytes = spliceBytes[i]!;
     bytes.fill(0);
     const memberVoice = mixInputVoice(member, v);
-    for (const range of ranges) renderGeneratorVoice(bytes, memberVoice, 1, sim, lab, range.start, range.end);
+    // Material regenerates on the effect's own decay constant instead of dying once, so a
+    // long cascade still has something to carry when it reaches the far drums — mirrors core.
+    const memberTime = voice.spliceMaterialTimeMs(
+      sim.timeMs,
+      memberVoice.bornAtMs,
+      materialCycleMs(memberVoice.generatorId, effectiveParams(memberVoice, sim), sim.bpm),
+    );
+    for (const range of ranges) renderGeneratorVoice(bytes, memberVoice, 1, sim, lab, range.start, range.end, memberTime);
     syncMixInputState(member, memberVoice);
   }
 
@@ -337,6 +345,9 @@ function renderGeneratorVoice(
   lab: LabModel,
   start: number,
   end: number,
+  /** Clock override — a splice renders its material on a regenerating clock (see
+      `spliceMaterialTimeMs`). Absent = the sim's own time, which is every other caller. */
+  atMs?: number,
 ): void {
   const gen = tryGetEffect(v.generatorId!);
   if (!gen) return;
@@ -366,7 +377,8 @@ function renderGeneratorVoice(
   genTrigger.velocity = v.velocity;
   genTrigger.note = Math.round(v.velocity * 127);
   genTrigger.timeMs = v.bornAtMs;
-  const age = sim.timeMs - v.bornAtMs;
+  const nowMs = atMs ?? sim.timeMs;
+  const age = nowMs - v.bornAtMs;
   genTrigger.ageMs = age > 0 ? age : 0;
 
   // Timebase parity with the core generator bridge (generator-bridge.ts): a 'voice'
@@ -375,7 +387,7 @@ function renderGeneratorVoice(
   // sim's wall-clock + transport. Keeping the formula identical to core keeps sim/engine
   // output in step.
   const voiceClock = (gen.timebase ?? 'absolute') === 'voice';
-  const clockMs = voiceClock ? genTrigger.ageMs : sim.timeMs;
+  const clockMs = voiceClock ? genTrigger.ageMs : nowMs;
   const beat = voiceClock ? (genTrigger.ageMs / 60000) * sim.bpm : sim.beat;
   const bar = Math.floor(beat / sim.beatsPerBar);
   const ctx: RenderContext = {

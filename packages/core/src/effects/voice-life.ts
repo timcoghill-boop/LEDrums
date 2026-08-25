@@ -49,6 +49,30 @@ export function resolveVoiceSustainMs(
 }
 
 /**
+ * The period at which an effect's material stays FRESH — its declared life param in
+ * milliseconds, without the {@link resolveVoiceSustainMs} tail factor.
+ *
+ * The difference is the point. A voice must outlive the whole visible tail, so `resolveVoiceSustainMs`
+ * multiplies an exponential decay's time constant by {@link EXP_TAIL_FACTOR}. Material carried by a
+ * splice wants the opposite reading: the span over which the effect still looks like itself. One
+ * time constant of an exponential is 0.37 of full — dimmer, still plainly there — so a splice that
+ * regenerates its material on this period always has something bright to carry, while regenerating
+ * on the tail-inclusive life would hand it an ember.
+ *
+ * 0 for an effect that declares no life: a plasma or a field texture never decays, so there is
+ * nothing to regenerate and the caller leaves its clock alone.
+ */
+export function materialCycleMs(generatorId: string | null | undefined, params: ResolvedParams, bpm: number): number {
+  if (!generatorId) return 0;
+  const generator = tryGetEffect(generatorId);
+  const life = generator?.voiceLife;
+  if (!life) return 0;
+  const spec = generator.paramSpec.find((s) => s.key === life.key);
+  const declared = Math.max(0, pnum(params, life.key, typeof spec?.default === 'number' ? spec.default : 0));
+  return life.unit === 'beats' ? declared * (MS_PER_MINUTE / (bpm > 0 ? bpm : FALLBACK_BPM)) : declared;
+}
+
+/**
  * What a spawning voice needs in order to live out its authored life.
  *
  * `spanMs` is the real-time width of the envelope's x axis — the SAME number

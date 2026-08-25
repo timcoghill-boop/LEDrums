@@ -60,6 +60,7 @@ export {
   spliceOrderIndex,
   splicePulseCycleMs,
   spliceRotationPx,
+  spliceMaterialTimeMs,
   spliceSourceOffset,
   spliceTintColour,
   maxCascadeDelayMs,

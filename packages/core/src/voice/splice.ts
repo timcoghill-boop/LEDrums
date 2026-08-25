@@ -390,6 +390,29 @@ export function spliceFeatherPx(smudge: number, bands: readonly SpliceBand[], le
 }
 
 /**
+ * The clock a splice's MATERIAL is rendered on.
+ *
+ * An effect decays on its own hit-clock: a sparkler burns out in under a second. A cascade
+ * crosses the kit in whatever the author asked for — four drums an eighth apart is five
+ * seconds — so by the time the far drums take their turn there is nothing left to carry, and
+ * the chase "barely reaches the next drums". Rendering each unit on its own delayed clock
+ * would be the literal answer and is unaffordable: one render per unit per member is 64 full
+ * renders a frame on a four-drum kit, measured at 24ms for a plasma against a 16.7ms budget.
+ *
+ * So the material REGENERATES instead: its clock wraps at the effect's own declared life, so
+ * a splice always has something to carry however long it carries it, and the splice's own
+ * BRIGHTNESS ENVELOPE stays the one authority on how long the light lasts — which is what a
+ * splice node has owned since it gained an envelope. An effect that declares no life (a
+ * plasma, a field texture — the ones that never decay) passes through untouched.
+ */
+export function spliceMaterialTimeMs(timeMs: number, bornAtMs: number, cycleMs: number): number {
+  if (!(cycleMs > 0)) return timeMs;
+  const age = timeMs - bornAtMs;
+  if (age <= cycleMs) return timeMs;
+  return bornAtMs + (age % cycleMs);
+}
+
+/**
  * Where a splice reads its material when the run it is sitting on has none of its own.
  *
  * An effect renders where IT decides to: a sparkler or a whole-drum burst lights only the
