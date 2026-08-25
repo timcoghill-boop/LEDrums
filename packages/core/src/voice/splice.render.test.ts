@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { listEffects } from '../effects/registry';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
@@ -931,6 +932,38 @@ describe('splice — effects inside a splice', () => {
   // light disappears rather than chasing. Both directions of movement are covered because they
   // reach the source offset by different routes: the chase shifts band GEOMETRY, the step hands
   // a band a different SLOT without moving anything.
+
+  // An effect renders where IT decides to — a sparkler lights the struck drum, a meter only
+  // the hoops under its level. Under the default per-hoop cut every hoop samples its own
+  // pixels, so those hoops had nothing to show and the effect could never leave the drum it
+  // was born on: a plasma (every pixel lit) moved around the kit and a sparkler did not. A
+  // run with no material of its own now shows a copy of the run that has some, which is what
+  // a colour splice has always done with its colour.
+  it('shows a struck-drum effect on hoops the effect never rendered on', () => {
+    const { rgb } = render(spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }), [drumEffect('fx')]);
+    // whole-drum lights the kick (0-7) only. Both of the snare's hoops (8-15) borrow it.
+    litRange(rgb, 0, 2, 'kick hoop 1, its own material');
+    litRange(rgb, 8, 10, 'snare hoop 1, borrowed');
+    litRange(rgb, 12, 14, 'snare hoop 2, borrowed');
+    darkRange(rgb, 10, 12, 'the blank splice is still blank');
+  });
+
+  it('leaves the frame dark when the member rendered nothing anywhere', () => {
+    // Nothing to borrow is nothing to show — never a stale frame or an arbitrary fill.
+    // meter-eq returns before writing a pixel at level 0 — a real effect rendering nothing.
+    const quiet: EffectDef = { ...drumEffect('fx'), generatorId: 'meter-eq', params: [{ key: 'level', label: 'Level', kind: 'number', min: 0, max: 1, default: 0 }] };
+    const { rgb } = render(spliceGraph([{ effectId: 'fx', params: { level: 0 } }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }), [quiet]);
+    darkRange(rgb, 0, 16, 'no material anywhere');
+  });
+
+  it('leaves a kit-wide effect exactly where it renders — nothing to borrow, nothing changed', () => {
+    // breathing-kit lights every pixel, so every run has its own material and this is the
+    // pre-borrow behaviour byte for byte. The borrow is a fallback, not a redistribution.
+    const { rgb } = render(spliceGraph([{ effectId: 'kit' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }), [litEffect('kit')]);
+    litRange(rgb, 0, 2, 'own material');
+    darkRange(rgb, 2, 4, 'blank splice');
+  });
+
   it('carries its effect’s material with it when the splice is rotated', () => {
     const graph = (rotationDeg: number) =>
       spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'scope', spliceRotationDeg: rotationDeg, spliceHoldMs: 60000 });
@@ -985,6 +1018,27 @@ describe('splice — effects inside a splice', () => {
     const [r, g, b] = rgb(2);
     expect(r + g + b, 'effect splice').toBeGreaterThan(0);
     expect(g + b, 'effect splice is not the flat red').toBeGreaterThan(0);
+  });
+
+// The requirement in one test: EVERY effect in the app must be able to move around the kit
+  // through a splice, not just the field effects that happen to light every pixel. Anything
+  // that renders at all has to reach a drum it never rendered on — which is the difference
+  // between a plasma (worked before) and a sparkler (did not).
+  it('lets every effect in the registry reach a drum it never renders on', () => {
+    const stranded: string[] = [];
+    for (const gen of listEffects()) {
+      if (gen.deprecated) continue;
+      const def: EffectDef = { ...drumEffect('fx'), generatorId: gen.id };
+      const { rgb } = render(spliceGraph([{ effectId: 'fx' }], { spliceCount: 1, splicePartition: 'hoop', spliceHoldMs: 60000 }), [def], 60);
+      const lit = (from: number, to: number): boolean => {
+        for (let i = from; i < to; i++) if (rgb(i)[0] + rgb(i)[1] + rgb(i)[2] > 0) return true;
+        return false;
+      };
+      // An effect that renders nothing at all here (one waiting on input it has not been
+      // given) is not stranded — there is simply nothing to carry.
+      if (lit(0, 16) && !lit(8, 16)) stranded.push(gen.id);
+    }
+    expect(stranded, 'effects that cannot leave the drum they were born on').toEqual([]);
   });
 
   it('is deterministic: the same show and the same hits render the same frame twice', () => {

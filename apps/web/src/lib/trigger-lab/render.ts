@@ -144,7 +144,31 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       : cfg.motionMode === 'latched'
         ? (v.spliceMotionMs ?? 0) // only ran while lit
         : age;
+  // Which runs carry each member's material, and the run that stands in for those that carry
+  // none — mirroring core, so an effect that renders on one drum (a sparkler, a meter) still
+  // travels the whole kit under a per-hoop cut instead of being stranded where it was born.
+  const runs: Array<{ start: number; end: number }> = [];
   voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unit) => {
+    runs.push({ start: unit.start, end: unit.end });
+  });
+  const litRuns = new Uint8Array(members.length * runs.length);
+  const sourceRun = new Int32Array(members.length);
+  for (let m = 0; m < members.length; m++) {
+    const bytes = spliceBytes[m]!;
+    for (let u = 0; u < runs.length; u++) {
+      let lit = 0;
+      for (let p = runs[u]!.start; p < runs[u]!.end; p++) {
+        const j3 = p * 3;
+        if (bytes[j3]! > 0 || bytes[j3 + 1]! > 0 || bytes[j3 + 2]! > 0) { lit = 1; break; }
+      }
+      litRuns[m * runs.length + u] = lit;
+    }
+    sourceRun[m] = voice.firstUnitWithMaterial(runs.length, (u) => litRuns[m * runs.length + u] === 1);
+  }
+
+  let runIndex = -1;
+  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unit) => {
+    runIndex += 1;
     const len = unit.end - unit.start;
     const seed = cfg.jitter > 0 ? (cfg.seed + unit.index * 0x9e3779b1) >>> 0 : cfg.seed;
     const bands = voice.computeSpliceBands(len, cfg.count, cfg.jitter, seed);
@@ -181,6 +205,11 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
             ? voice.unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
             : 1;
       if (unitLevel <= 0) return;
+      // This run's own material, or a copy of the run that has some — mirroring core.
+      const borrow = litRuns[inputIndex * runs.length + runIndex] === 0;
+      const from = borrow ? runs[sourceRun[inputIndex]!] : unit;
+      if (!from) return; // this member rendered nothing anywhere this frame
+      const fromLen = from.end - from.start;
       const src = spliceBytes[inputIndex]!;
       const colour = voice.spliceTintColour(cfg.colors[slot]);
       const span = bandEnd - bandStart;
@@ -189,7 +218,7 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
         const j3 = p * 3;
         // Material read from the band's home position, mirroring core: a splice carries its
         // contents rather than framing whatever the effect happens to render underneath.
-        const s3 = (unit.start + voice.wrapIndex(bandStart + i + srcDelta, len)) * 3;
+        const s3 = (from.start + voice.spliceSourceOffset(bandStart + i + srcDelta, len, fromLen)) * 3;
         let r = src[s3]! / 255;
         let g = src[s3 + 1]! / 255;
         let b = src[s3 + 2]! / 255;

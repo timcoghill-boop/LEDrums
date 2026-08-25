@@ -390,6 +390,40 @@ export function spliceFeatherPx(smudge: number, bands: readonly SpliceBand[], le
 }
 
 /**
+ * Where a splice reads its material when the run it is sitting on has none of its own.
+ *
+ * An effect renders where IT decides to: a sparkler or a whole-drum burst lights only the
+ * struck drum, a meter only the hoops under its level, a chase one hoop at a time. Under a
+ * per-hoop or per-drum cut every run samples its own pixels, so those runs have nothing to
+ * show and the effect can never leave the drum it was born on — which is why a plasma (every
+ * pixel lit) moved around the kit and a sparkler did not. A splice carries material, so an
+ * empty run borrows from the first run that HAS material and shows a copy of it, exactly as
+ * a colour splice paints its colour on every run.
+ *
+ * Returns the index of the first run carrying anything, or -1 when the member rendered
+ * nothing at all anywhere (a blank frame of a sparse effect, an effect waiting on input) —
+ * the caller then draws nothing rather than a stale or arbitrary fill.
+ */
+export function firstUnitWithMaterial(unitCount: number, hasMaterial: (unit: number) => boolean): number {
+  for (let u = 0; u < unitCount; u++) if (hasMaterial(u)) return u;
+  return -1;
+}
+
+/**
+ * Map an offset local to one run onto the run the material is borrowed from. Same length (the
+ * common case — every hoop of a drum has the same pixel count) is a plain wrap, so the copy is
+ * pixel for pixel. Different lengths scale proportionally: a 60-pixel hoop borrowing from a
+ * 40-pixel one shows the whole of it rather than two thirds of it.
+ */
+export function spliceSourceOffset(local: number, len: number, srcLen: number): number {
+  if (srcLen <= 0 || len <= 0) return 0;
+  const wrapped = wrapIndex(local, len);
+  if (srcLen === len) return wrapped;
+  const scaled = Math.floor((wrapped * srcLen) / len);
+  return scaled >= srcLen ? srcLen - 1 : scaled;
+}
+
+/**
  * Emit the weighted segments of one run: `(slot, start, end, w0, w1, srcDelta)`, the weight
  * ramping linearly from `w0` at `start` to `w1` at `end`. Offsets are local to the run; `end`
  * exclusive.

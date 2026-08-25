@@ -32,13 +32,14 @@ import {
   colorCascadeDelayMs,
   computeSpliceBands,
   forEachPartitionUnit,
+  firstUnitWithMaterial,
   forEachSpliceSegment,
   spliceFeatherPx,
   maxCascadeDelayMs,
   spliceOrderIndex,
   splicePulseCycleMs,
   spliceRotationPx,
-  wrapIndex,
+  spliceSourceOffset,
   spliceTintColour,
   unitCascadeDelayMs,
   unitEnvelopeLevel,
@@ -351,8 +352,30 @@ export function createDefaultCompositor(): Compositor {
               : cfg.motionMode === 'latched'
                 ? (v.spliceMotionMs ?? 0) // only ran while lit — see `advanceLatchedSpliceMotion`
                 : age;
+          // Which runs carry each member's material, and which run stands in for the ones
+          // that carry none. Scanned once per member per frame (early-out on the first lit
+          // pixel), because an effect decides for itself where it renders and that can change
+          // frame to frame — a sparkler's sparks are sparse, a meter's level moves.
+          const unitCount = units.length;
+          const litUnits = new Uint8Array(v.spliceInputs.length * unitCount);
+          const sourceUnit = new Int32Array(v.spliceInputs.length);
+          for (let m = 0; m < v.spliceInputs.length; m++) {
+            const rgba = buffers[m]!.rgba;
+            for (let u = 0; u < unitCount; u++) {
+              const unit = units[u]!;
+              let lit = 0;
+              for (let p = unit.start; p < unit.end; p++) {
+                const j = p * 4;
+                if (rgba[j]! > 0 || rgba[j + 1]! > 0 || rgba[j + 2]! > 0 || rgba[j + 3]! > 0) { lit = 1; break; }
+              }
+              litUnits[m * unitCount + u] = lit;
+            }
+            sourceUnit[m] = firstUnitWithMaterial(unitCount, (u) => litUnits[m * unitCount + u] === 1);
+          }
+
           const dstRgba = mix.rgba;
-          for (const unit of units) {
+          for (let unitIndex = 0; unitIndex < unitCount; unitIndex++) {
+            const unit = units[unitIndex]!;
             const len = unit.end - unit.start;
             // Each unit runs on its own clock, so an offset cascade starts hoop after hoop —
             // and, on a kit-wide splice, drum after drum. With no offsets every unit gets the
@@ -394,6 +417,12 @@ export function createDefaultCompositor(): Compositor {
                     ? unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
                     : 1;
               if (unitLevel <= 0) return;
+              // This run's own material, or a copy of the run that has some — so an effect
+              // that renders on one drum still travels the whole kit under a per-hoop cut.
+              const borrow = litUnits[inputIndex * unitCount + unitIndex] === 0;
+              const from = borrow ? units[sourceUnit[inputIndex]!] : unit;
+              if (!from) return; // this member rendered nothing anywhere this frame
+              const fromLen = from.end - from.start;
               const src = buffers[inputIndex]!.rgba;
               const colour = spliceTintColour(cfg.colors[slot]);
               const span = bandEnd - bandStart;
@@ -405,7 +434,7 @@ export function createDefaultCompositor(): Compositor {
                 // destination instead pins an effect to the kit while its splice moves away —
                 // spin a splice holding a whole-drum effect half a turn and the kit goes dark,
                 // because the band has arrived where that effect renders nothing.
-                const sj = (unit.start + wrapIndex(bandStart + i + srcDelta, len)) * 4;
+                const sj = (from.start + spliceSourceOffset(bandStart + i + srcDelta, len, fromLen)) * 4;
                 const r = src[sj]!;
                 const g = src[sj + 1]!;
                 const b = src[sj + 2]!;
