@@ -38,6 +38,7 @@ import {
   spliceOrderIndex,
   splicePulseCycleMs,
   spliceRotationPx,
+  wrapIndex,
   spliceTintColour,
   unitCascadeDelayMs,
   unitEnvelopeLevel,
@@ -373,7 +374,7 @@ export function createDefaultCompositor(): Compositor {
                   ? chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
                   : 0);
             const feather = spliceFeatherPx(cfg.smudge, unit.bands, len);
-            forEachSpliceSegment(unit.bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
+            forEachSpliceSegment(unit.bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1, srcDelta) => {
               const inputIndex = cfg.inputBySlot[slot] ?? -1;
               if (inputIndex < 0) return; // a blank splice shows nothing
               // The reveal is per SPLICE, not just per unit: a colour offset staggers when each
@@ -399,10 +400,16 @@ export function createDefaultCompositor(): Compositor {
               for (let i = 0; i < span; i++) {
                 const p = unit.start + bandStart + i;
                 const j = p * 4;
-                const r = src[j]!;
-                const g = src[j + 1]!;
-                const b = src[j + 2]!;
-                const a = src[j + 3]!;
+                // Read the material from the band's HOME position, not from under its feet: a
+                // splice carries what is inside it, exactly as its colour does. Sampling at the
+                // destination instead pins an effect to the kit while its splice moves away —
+                // spin a splice holding a whole-drum effect half a turn and the kit goes dark,
+                // because the band has arrived where that effect renders nothing.
+                const sj = (unit.start + wrapIndex(bandStart + i + srcDelta, len)) * 4;
+                const r = src[sj]!;
+                const g = src[sj + 1]!;
+                const b = src[sj + 2]!;
+                const a = src[sj + 3]!;
                 if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
                 // Accumulate, never assign: across a smudge two neighbouring splices write the
                 // same pixel with complementary weights that sum to 1. With no smudge the

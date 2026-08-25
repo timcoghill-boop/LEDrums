@@ -167,7 +167,7 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
           ? voice.chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
           : 0);
     const feather = voice.spliceFeatherPx(cfg.smudge, bands, len);
-    voice.forEachSpliceSegment(bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
+    voice.forEachSpliceSegment(bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1, srcDelta) => {
       const inputIndex = cfg.inputBySlot[slot] ?? -1;
       if (inputIndex < 0) return; // a blank splice shows nothing
       // Per-SPLICE reveal (colour cascade on top of the unit's turn), mirroring core.
@@ -187,9 +187,12 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       for (let i = 0; i < span; i++) {
         const p = unit.start + bandStart + i;
         const j3 = p * 3;
-        let r = src[j3]! / 255;
-        let g = src[j3 + 1]! / 255;
-        let b = src[j3 + 2]! / 255;
+        // Material read from the band's home position, mirroring core: a splice carries its
+        // contents rather than framing whatever the effect happens to render underneath.
+        const s3 = (unit.start + voice.wrapIndex(bandStart + i + srcDelta, len)) * 3;
+        let r = src[s3]! / 255;
+        let g = src[s3 + 1]! / 255;
+        let b = src[s3 + 2]! / 255;
         if (r <= 0 && g <= 0 && b <= 0) continue;
         const w = (span <= 1 ? w0 : w0 + (w1 - w0) * (i / span)) * unitLevel;
         if (w <= 0) continue;

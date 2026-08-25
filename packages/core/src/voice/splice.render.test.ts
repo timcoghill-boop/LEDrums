@@ -902,6 +902,66 @@ describe('splice — effects inside a splice', () => {
     releaseMs: 100,
   });
 
+
+  /** Lights ONLY the struck drum, so where the material is showing is readable from the frame:
+      pixels 0-7 are the kick, 8-15 the snare, and the effect renders nothing on the snare. */
+  const drumEffect = (id: string): EffectDef => ({
+    id,
+    name: id,
+    generatorId: 'whole-drum',
+    busId: 'base',
+    scope: 'kit',
+    params: [],
+    attackMs: 10,
+    sustainMs: 60000,
+    releaseMs: 100,
+  });
+
+  const litRange = (rgb: (i: number) => [number, number, number], from: number, to: number, label: string): void => {
+    for (let i = from; i < to; i++) expect(rgb(i)[0] + rgb(i)[1] + rgb(i)[2], `${label} px${i}`).toBeGreaterThan(0);
+  };
+  const darkRange = (rgb: (i: number) => [number, number, number], from: number, to: number, label: string): void => {
+    for (let i = from; i < to; i++) expect(rgb(i)[0] + rgb(i)[1] + rgb(i)[2], `${label} px${i}`).toBe(0);
+  };
+
+  // A splice is a container of material, not a window onto a fixed render: what is inside it
+  // travels when it moves, exactly as a colour splice's colour does. Sampling the member buffer
+  // at the destination instead pins the effect to the kit — and because a kit-wide effect lights
+  // only part of the kit, the splice then arrives somewhere that effect renders nothing and the
+  // light disappears rather than chasing. Both directions of movement are covered because they
+  // reach the source offset by different routes: the chase shifts band GEOMETRY, the step hands
+  // a band a different SLOT without moving anything.
+  it('carries its effect’s material with it when the splice is rotated', () => {
+    const graph = (rotationDeg: number) =>
+      spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'scope', spliceRotationDeg: rotationDeg, spliceHoldMs: 60000 });
+    const still = render(graph(0), [drumEffect('fx')]);
+    litRange(still.rgb, 0, 8, 'unrotated: material on the kick');
+    darkRange(still.rgb, 8, 16, 'unrotated: blank splice');
+
+    // Half a turn of a 16-pixel kit moves the splice onto the snare's half — and the kick's
+    // light goes with it. Under the old reading the whole kit went dark here.
+    const spun = render(graph(180), [drumEffect('fx')]);
+    litRange(spun.rgb, 8, 16, 'rotated: material carried across');
+    darkRange(spun.rgb, 0, 8, 'rotated: vacated half');
+  });
+
+  it('chases an effect around the kit, step by step', () => {
+    const graph = spliceGraph([{ effectId: 'fx' }, {}], {
+      splicePartition: 'scope',
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceHoldMs: 60000,
+    });
+    const first = render(graph, [drumEffect('fx')], 45);
+    litRange(first.rgb, 0, 8, 'step 0');
+    darkRange(first.rgb, 8, 16, 'step 0');
+
+    const second = render(graph, [drumEffect('fx')], 145);
+    litRange(second.rgb, 8, 16, 'step 1: the light travelled with the splice');
+    darkRange(second.rgb, 0, 8, 'step 1');
+  });
+
   it('shows an effect only inside its own splice, leaving the others to their own content', () => {
     const { rgb } = render(spliceGraph([{ effectId: 'fx' }, {}]), [litEffect('fx')]);
     const [r, g, b] = rgb(0);

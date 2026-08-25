@@ -390,8 +390,15 @@ export function spliceFeatherPx(smudge: number, bands: readonly SpliceBand[], le
 }
 
 /**
- * Emit the weighted segments of one run: `(slot, start, end, w0, w1)`, the weight ramping
- * linearly from `w0` at `start` to `w1` at `end`. Offsets are local to the run; `end` exclusive.
+ * Emit the weighted segments of one run: `(slot, start, end, w0, w1, srcDelta)`, the weight
+ * ramping linearly from `w0` at `start` to `w1` at `end`. Offsets are local to the run; `end`
+ * exclusive.
+ *
+ * `srcDelta` is what makes a splice a CONTAINER of material rather than a window onto a fixed
+ * render: add it to a destination offset (wrapping) to get the offset the material for this
+ * segment was rendered at — the band's home position, before the chase moved it and before the
+ * slots stepped around. A caller that ignores it shows whatever happens to lie under the band,
+ * which pins an effect to the kit while its splice moves out from under it.
  *
  * With `featherPx` 0 each band is ONE segment at full weight — a hard cut, byte for byte. With a
  * feather each band is three: a ramp up across its leading boundary, a full-weight core, and a
@@ -408,7 +415,7 @@ export function forEachSpliceSegment(
   shiftPx: number,
   offsetSlots: number,
   featherPx: number,
-  visit: (slot: number, start: number, end: number, w0: number, w1: number) => void,
+  visit: (slot: number, start: number, end: number, w0: number, w1: number, srcDelta: number) => void,
 ): void {
   const count = bands.length;
   if (count === 0 || len <= 0) return;
@@ -419,7 +426,7 @@ export function forEachSpliceSegment(
   // half would leave a seam at every boundary between bands of different sizes.
   const half = Math.round(featherPx / 2);
 
-  const emit = (slot: number, from: number, to: number, w0: number, w1: number): void => {
+  const emit = (slot: number, from: number, to: number, w0: number, w1: number, srcDelta: number): void => {
     if (to <= from) return;
     const span = to - from;
     let cursor = from;
@@ -428,7 +435,7 @@ export function forEachSpliceSegment(
       const chunk = Math.min(to - cursor, len - wrapped);
       const t0 = (cursor - from) / span;
       const t1 = (cursor + chunk - from) / span;
-      visit(slot, wrapped, wrapped + chunk, w0 + (w1 - w0) * t0, w0 + (w1 - w0) * t1);
+      visit(slot, wrapped, wrapped + chunk, w0 + (w1 - w0) * t0, w0 + (w1 - w0) * t1, srcDelta);
       cursor += chunk;
     }
   };
@@ -438,16 +445,22 @@ export function forEachSpliceSegment(
     if (band.width <= 0) continue;
     const slot = wrapIndex(b - offsetSlots, count);
     const start = band.start + shift;
+    // Where this segment's material lives: back out the chase's pixel shift, then back out the
+    // step, which does not move bands at all but hands this band a different slot — so the
+    // material comes from where THAT slot was cut. Under jittered widths the two bands differ
+    // in size and the tail of the wider one repeats; the alternative is resampling, which would
+    // stretch an effect's geometry every step.
+    const srcDelta = bands[slot]!.start - band.start - shift;
     // No guard on band width: when a band is exactly twice the half-width its flat core is
     // empty and it is pure ramp — which is what a full-strength smudge IS, not a degenerate
     // case. `emit` drops empty segments on its own.
     if (half <= 0) {
-      emit(slot, start, start + band.width, 1, 1);
+      emit(slot, start, start + band.width, 1, 1, srcDelta);
       continue;
     }
-    emit(slot, start - half, start + half, 0, 1);
-    emit(slot, start + half, start + band.width - half, 1, 1);
-    emit(slot, start + band.width - half, start + band.width + half, 1, 0);
+    emit(slot, start - half, start + half, 0, 1, srcDelta);
+    emit(slot, start + half, start + band.width - half, 1, 1, srcDelta);
+    emit(slot, start + band.width - half, start + band.width + half, 1, 0, srcDelta);
   }
 }
 
