@@ -114,6 +114,7 @@ import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './
 import { announceSystemActions } from './store/system-toasts';
 import { idsFromLibrarySong } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
+import { forkGraphForActiveSection } from './store/section-graph-cow';
 import {
   canSplice,
   classifyConnection,
@@ -1268,7 +1269,13 @@ export class TriggerLab {
   }
 
   private pushUndoSnapshot(): void {
-    if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
+    if (this.restoringUndo || this.isViewer) return;
+    // Sections own their graphs from the first edit made in one — see `section-graph-cow`.
+    // Hung here because this is the ONE call every authoring mutator already makes before it
+    // touches anything, so a mutator written later cannot forget to fork. It runs even mid
+    // gesture, ahead of the suppression below: a drag's first mutation must still fork.
+    this.forkOpenGraphForActiveSection();
+    if (this.suppressUndoSnapshot) return;
     // First mutation inside an open gesture (a pointer drag on a face param / slider): THIS
     // checkpoint covers the whole drag, and everything until endGesture() folds into it.
     if (this.gesturePending) {
@@ -1284,6 +1291,37 @@ export class TriggerLab {
     if (this.undoStack.length > this.undoLimit) {
       this.undoStack.splice(0, this.undoStack.length - this.undoLimit);
     }
+  }
+
+  /**
+   * Copy-on-write for the OPEN graph: the first edit made while another section shares it
+   * hands the OTHER sections a copy and keeps this section on the original key.
+   *
+   * That direction is load-bearing, not a preference. A node edit is `Object.assign(node,
+   * patch)` on an object the caller is already holding, so giving the editing section a fresh
+   * clone would send the edit in flight into the graph nobody is looking at any more. The
+   * copy is made at the moment of divergence rather than when a section is created, because
+   * eager copies are not free to look at: a fresh show has a graph per pad per section, and
+   * the Objects view and both pickers would list four identical "Kick · Rim tip" rows before
+   * the author had done anything at all.
+   */
+  private forkOpenGraphForActiveSection(): void {
+    const key = this.selectedPadKey;
+    if (!key) return;
+    const res = forkGraphForActiveSection(
+      this.songs,
+      this.graphs,
+      this.graphNames,
+      this.activeSectionId,
+      key,
+      () => freshId('graph', (k) => k in this.graphs), // global uniqueness (survives reload)
+      (k) => this.graphLabel(k),
+      (g) => graphsLib.cloneGraph($state.snapshot(g) as TriggerGraph),
+    );
+    if (!res.forkedTo) return;
+    this.songs = res.songs;
+    this.graphs = res.graphs;
+    this.graphNames = res.graphNames;
   }
 
   runUndoable<T>(edit: () => T): T {

@@ -336,3 +336,79 @@ describe('rename / delete section', () => {
     }
   });
 });
+
+/* Sections exist so the same drum zone can light differently as the song moves — and until
+   this, they could not: every section referenced the same graph KEY, so a node edited in the
+   Verse changed in the Chorus with it. The copy is made on the first EDIT rather than when a
+   section is created, so an untouched show still shows one row per pad in the pickers. */
+describe('a section owns the graph it edits (copy-on-write)', () => {
+  /** Open `key` for editing inside `sectionId`, then move a node in it. */
+  function editNodeIn(store: TriggerLab, sectionId: string, key: string, x: number): void {
+    store.setActiveSection(sectionId);
+    store.selectedPadKey = key;
+    const node = store.graphs[key]!.nodes[0]!;
+    store.moveNode(node, x, 0);
+  }
+
+  it('editing a shared graph in one section leaves the other sections alone', () => {
+    const store = new TriggerLab(fakeClient);
+    const [verse, chorus] = store.activeSong!.sections;
+    const key = verse!.graphs[0]!;
+    expect(chorus!.graphs[0], 'the seed shares one key across sections').toBe(key);
+
+    editNodeIn(store, verse!.id, key, 999);
+
+    const chorusKey = store.activeSong!.sections[1]!.graphs[0]!;
+    expect(chorusKey, 'the chorus moved onto its own copy').not.toBe(key);
+    expect(store.graphs[chorusKey]!.nodes[0]!.x, 'and did not take the edit').not.toBe(999);
+  });
+
+  it('the edit lands where the author is looking', () => {
+    // The fork hands the COPY to the other sections and keeps the editor on the original,
+    // because the mutation in flight already holds a reference into that graph object.
+    const store = new TriggerLab(fakeClient);
+    const [verse] = store.activeSong!.sections;
+    const key = verse!.graphs[0]!;
+
+    editNodeIn(store, verse!.id, key, 999);
+
+    expect(store.activeSong!.sections[0]!.graphs[0], 'the editing section keeps the key').toBe(key);
+    expect(store.graphs[key]!.nodes[0]!.x).toBe(999);
+  });
+
+  it('each section diverges on its own first edit, and later edits stay put', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const key = sections[0]!.graphs[0]!;
+
+    editNodeIn(store, sections[0]!.id, key, 111);
+    const chorusKey = store.activeSong!.sections[1]!.graphs[0]!;
+    editNodeIn(store, sections[1]!.id, chorusKey, 222);
+
+    const after = store.activeSong!.sections;
+    expect(store.graphs[after[0]!.graphs[0]!]!.nodes[0]!.x).toBe(111);
+    expect(store.graphs[after[1]!.graphs[0]!]!.nodes[0]!.x).toBe(222);
+    expect(after[0]!.graphs[0], 'two sections, two graphs').not.toBe(after[1]!.graphs[0]);
+  });
+
+  it('mints no copies until something is actually edited', () => {
+    // Eager forking would fill the Objects view and both pickers with identical rows.
+    const store = new TriggerLab(fakeClient);
+    const before = Object.keys(store.graphs).length;
+    store.setActiveSection(store.activeSong!.sections[1]!.id);
+    store.selectedPadKey = store.activeSong!.sections[1]!.graphs[0]!;
+    expect(Object.keys(store.graphs).length, 'selecting a graph copies nothing').toBe(before);
+  });
+
+  it('the copy keeps the source label, so no raw key shows in the picker', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const key = sections[0]!.graphs[0]!;
+    const label = store.graphLabel(key);
+
+    editNodeIn(store, sections[0]!.id, key, 999);
+
+    const chorusKey = store.activeSong!.sections[1]!.graphs[0]!;
+    expect(store.graphLabel(chorusKey)).toBe(label);
+  });
+});
