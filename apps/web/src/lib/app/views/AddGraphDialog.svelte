@@ -46,7 +46,7 @@
     graphPickRows(
       store.graphLibrary,
       section?.graphs ?? [],
-      (key) => describeTriggerSource(store.triggerSource(key), store.drums).sub,
+      (key) => describeTriggerSource(store.triggerSource(key), store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub,
       query,
     ),
   );

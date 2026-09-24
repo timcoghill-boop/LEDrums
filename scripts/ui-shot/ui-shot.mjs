@@ -335,6 +335,20 @@ mkdirSync(OUT_DIR, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT, deviceScaleFactor: 2 });
 
+// Explicit offline preview for isolated authoring checks, with no server or hardware input.
+if (process.env.UI_SHOT_OFFLINE === '1') {
+  await context.addInitScript(() => {
+    class OfflineSocket extends EventTarget {
+      static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+      readyState = 0;
+      send() {}
+      close() { this.readyState = 3; }
+    }
+    window.WebSocket = OfflineSocket;
+    navigator.requestMIDIAccess = async () => ({ inputs: new Map(), outputs: new Map(), addEventListener() {}, removeEventListener() {} });
+  });
+}
+
 let totalErrors = 0;
 for (const shot of shots) {
   const page = await context.newPage();

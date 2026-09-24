@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-09-06
+last_updated: 2026-09-25
 ---
 
 # Section graph ownership
@@ -33,3 +33,27 @@ sections/songs, 2/3/4/N placement counts, self/no-op and reverse links, linked e
 unlink isolation + undo, collision-safe IDs, failed-placement no-mint behavior, legacy load,
 ClipDoc graph copies, canonical library references, atomic graph/name undo, and strict Sections UI
 captures with console-error inspection.
+
+
+## Section and zone authoring
+
+Source: Trent's six authoring requests, 2026-09-25.
+
+- `app/section-actions.ts` supplies section overflow and context actions. `moveSection` takes an
+  original-list gap index; moving right one position uses `index + 2`, not `index + 1`.
+- Trigger rail reorder calls `moveGraphPlacement` and shares `gapIndexAt` with Sections. It must
+  keep the open graph selected and ignore drops after the active section changes.
+- Desktop HTML drag/drop requires `dragDropEnabled: false` on the Tauri app window. Native file
+  drops are not used here. Browser success alone is not a packaged macOS interaction test.
+- Settings zones come from `zoneSlotsForDrum(inputMap, drumId)`, including declared unbound
+  slots. `Select` defaults to segments for short lists; user-authored drum/zone names must opt
+  out with `segment={false}`. Source subtitles also need the input map for configured names.
+- `zoneGraphUsers` checks trigger and sequence-reset sources across the active graph model,
+  inactive shows and canonical songs. `setInputMap` refuses deletion before undo or WS writes.
+  Zone binding helpers preserve the zone declaration when clearing its last MIDI/OSC binding;
+  only `removeZone` removes its identity. Raw-map test fixtures that only intend to rebind one
+  zone must preserve other bindings/declarations.
+- Missing-default fill compares actual trigger sources, mints independent graphs, and records
+  one undo snapshot. Repeating it must add nothing.
+- `UI_SHOT_OFFLINE=1` disables server/MIDI access in captures. The `configured-zones` fixture
+  provides custom labels and an unbound zone; `select:trigger` selects the real source node.

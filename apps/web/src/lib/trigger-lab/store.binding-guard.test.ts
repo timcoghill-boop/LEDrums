@@ -63,7 +63,7 @@ describe('global control vs drum zone', () => {
   it('refuses a global note that a zone already owns, locally AND on the wire', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
-    store.setInputMap({ ...store.project!.inputMap, midiNotes: [{ note: 60, drumId: 'kick', slot: 0 }] });
+    store.setInputMap({ ...store.project!.inputMap, midiNotes: store.project!.inputMap.midiNotes.map((binding) => binding.drumId === 'kick' && binding.slot === 0 ? { ...binding, note: 60 } : binding) });
     const before = inputMapMessages(sent).length;
 
     store.setGlobalControlBinding('nextSong', { midiNote: 60 });

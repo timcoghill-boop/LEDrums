@@ -33,7 +33,7 @@
   } = $props();
 
   const sourceSub = (key: string): string =>
-    describeTriggerSource(store.triggerSource(key), store.drums).sub;
+    describeTriggerSource(store.triggerSource(key), store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub;
 </script>
 
 <Drawer open={!!section} {onClose} title="Add a graph" side="right" width="320px">

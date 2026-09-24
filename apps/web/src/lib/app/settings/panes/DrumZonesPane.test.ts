@@ -47,6 +47,7 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     midiLearnTarget: null,
     oscLearnTarget: null,
     inputBadge: () => null,
+    zoneGraphUsers: () => [],
     velocityHitsFor: () => [],
     setInputMap: vi.fn(),
     startMidiLearn: vi.fn(),

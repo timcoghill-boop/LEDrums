@@ -18,7 +18,8 @@ import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
 import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
-import { voice, withVelocityCurve } from '@ledrums/core';
+import { defaultProject, voice, withVelocityCurve } from '@ledrums/core';
+import { addDeclaredZone, setZoneLabel } from './docks/patch-inspector';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { pendingWirePreview, spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 import { lintPreview } from './views/lint-preview.svelte';
@@ -333,7 +334,7 @@ class ShotSeamImpl implements ShotSeam {
     const byId = graph.nodes.find((node) => node.id === kindOrId);
     const byKindLive = byKind && graph.nodes.some((node) => node.id === byKind.id) ? byKind : null;
     const fallback = graph.nodes.find((node) => node.kind !== 'trigger');
-    const target = byKindLive ?? byId ?? fallback;
+    const target = byKindLive ?? byId ?? graph.nodes.find((node) => node.kind === kindOrId) ?? fallback;
     if (target) this.shell.select({ kind: 'node', nodeId: target.id });
   }
 
@@ -826,6 +827,13 @@ class ShotSeamImpl implements ShotSeam {
       case 'reset':
         this.reset();
         break;
+      case 'configured-zones': {
+        if (this.store.link === 'open') throw new Error('configured-zones requires an offline preview');
+        this.store.project = defaultProject();
+        this.store.setInputMap(addDeclaredZone(setZoneLabel(this.store.project.inputMap, 'kick', 0, 'Head center'), 'kick', 2, 'Rim'));
+        this.openGraph('Kick');
+        break;
+      }
       case 'view':
         if (arg) this.setView(arg as View);
         break;

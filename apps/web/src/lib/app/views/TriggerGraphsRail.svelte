@@ -18,6 +18,7 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { graphPlacementCount } from '../setlist';
   import { describeTriggerSource } from '../trigger-source-label';
+  import { gapIndexAt } from './sections-dnd';
   import { graphThumb } from './graph-thumb';
   import { hotkeyLabel } from './graph-card-hotkey';
   import { tint } from './trigger-node-meta';
@@ -49,13 +50,45 @@
   let deleting = $state<string | null>(null);
   let adding = $state(false);
 
+  let cardsEl = $state<HTMLDivElement | null>(null);
+  let dragging = $state<{ sectionId: string; key: string } | null>(null);
+  let dropIndex = $state<number | null>(null);
+
+  function clearDrag(): void { dragging = null; dropIndex = null; }
+  function gapAt(y: number): number {
+    const cards = cardsEl?.querySelectorAll<HTMLElement>('[data-graph-card]') ?? [];
+    return gapIndexAt(Array.from(cards, (card) => card.getBoundingClientRect()), y);
+  }
+  function startDrag(key: string, event: DragEvent): void {
+    if (!canArrange || !section) { event.preventDefault(); return; }
+    dragging = { sectionId: section.id, key };
+    event.dataTransfer?.setData('text/plain', key);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+  function dragOver(event: DragEvent): void {
+    if (!canArrange || !dragging || dragging.sectionId !== section?.id) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    dropIndex = gapAt(event.clientY);
+  }
+  function drop(event: DragEvent): void {
+    if (!canArrange || !dragging || dragging.sectionId !== section?.id) { clearDrag(); return; }
+    event.preventDefault();
+    store.moveGraphPlacement(section.id, dragging.key, section.id, gapAt(event.clientY));
+    clearDrag();
+  }
+  function dragLeave(event: DragEvent): void {
+    if (event.relatedTarget instanceof Node && cardsEl?.contains(event.relatedTarget)) return;
+    dropIndex = null;
+  }
+
   function openGraph(key: string): void {
     if (!section) return;
     store.selectGraphInSection(section.id, key);
     shell.clearSelection(); // switching graphs clears the node inspector
   }
   function sourceSub(key: string): string {
-    return describeTriggerSource(store.triggerSource(key), store.drums).sub;
+    return describeTriggerSource(store.triggerSource(key), store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub;
   }
   /** How many supported placements across ALL songs place this graph — > 1 is the linked state. */
   function placements(key: string): number {
@@ -115,7 +148,7 @@
   <PanelHeader icon={Workflow} title="Graphs">
     <span class="hint" aria-hidden="true"><kbd>1</kbd>–<kbd>9</kbd> fire</span>
   </PanelHeader>
-  <div class="cards">
+  <div class="cards" role="list" aria-label="Section graphs" bind:this={cardsEl} ondragover={dragOver} ondrop={drop} ondragleave={dragLeave}>
     {#if !section}
       <p class="none">No section is active — pick one in the Sections view.</p>
     {:else}
@@ -126,8 +159,9 @@
         {@const links = placements(key)}
         {@const firedAt = store.graphFireAt[key]}
         {@const playing = store.playingGraphs.has(key)}
+        {#if dropIndex === i}<div class="drop-line" aria-hidden="true"></div>{/if}
         {#if renaming === key}
-          <div class="gcard gedit">
+          <div class="gcard gedit" data-graph-card>
             <CommitInput
               value={store.graphLabel(key)}
               ariaLabel="Rename graph"
@@ -143,6 +177,10 @@
             <button
               type="button"
               class="gcard"
+              data-graph-card
+              draggable={canArrange}
+              ondragstart={(event) => startDrag(key, event)}
+              ondragend={clearDrag}
               class:sel={store.selectedPadKey === key}
               onclick={() => openGraph(key)}
               ondblclick={() => canArrange && startRename(key)}
@@ -188,6 +226,7 @@
           </ContextMenu>
         {/if}
       {/each}
+      {#if dropIndex === graphs.length}<div class="drop-line" aria-hidden="true"></div>{/if}
       <button type="button" class="newcard" disabled={!canArrange} title={canArrange ? 'Add graph' : blockedReason} onclick={() => (adding = true)}>
         <Plus size={15} aria-hidden="true" />
         Add graph
@@ -215,6 +254,14 @@
 />
 
 <style>
+  .drop-line {
+    flex: none;
+    height: 2px;
+    margin: -5px 0;
+    background: var(--accent);
+    pointer-events: none;
+  }
+
   .grail {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);

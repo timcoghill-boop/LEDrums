@@ -150,3 +150,8 @@ describe('graphsLinkedToZone', () => {
     expect(graphsLinkedToZone(graphs, null, '  ')).toEqual([]);
   });
 });
+
+it('uses configured zone names for drum-source labels', () => {
+  const inputMap = { midiNotes: [], oscMap: [], midiChannel: null, globalControls: {}, velocityCurves: {}, zones: [{ drumId: 'kick', slot: 7, label: 'Foot trigger' }] };
+  expect(describeTriggerSource({ kind: 'drum', drumId: 'kick', zone: '7' }, [{ id: 'kick', label: 'Kick' }], inputMap).sub).toBe('Kick · Foot trigger');
+});

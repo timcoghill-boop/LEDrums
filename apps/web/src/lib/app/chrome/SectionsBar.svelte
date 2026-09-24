@@ -4,6 +4,9 @@
      the Perform pads and ←/→ keys drive. The add affordance stays visible while
      gated so presence resolution cannot make the compact chrome jump. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import ContextMenu from '../../ui/ContextMenu.svelte';
+  import CommitInput from '../../ui/CommitInput.svelte';
+  import { sectionActions } from '../section-actions';
   import IconButton from '../../ui/IconButton.svelte';
   import NavArrow from '../../ui/NavArrow.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -12,6 +15,11 @@
   import { BIND_INVITE, globalControlBindingSummary } from '../global-control-labels';
 
   let { store }: { store: TriggerLab } = $props();
+
+  let editingId = $state<string | null>(null);
+  function startRename(id: string): void {
+    if (store.canEditActiveSong) requestAnimationFrame(() => (editingId = id));
+  }
 
   const sections = $derived(store.activeSongById?.sections ?? []);
   // Explain the specific unavailable target before the generic viewer gate: it tells the user
@@ -37,15 +45,25 @@
       <span class="none">No sections in this song</span>
     {/if}
     {#each sections as sec (sec.id)}
+      {#if editingId === sec.id}
+        <span class="chip-edit">
+          <CommitInput value={sec.name} ariaLabel="Section name" onCommit={(name) => { editingId = null; store.renameSection(sec.id, name); }} onCancel={() => (editingId = null)} />
+        </span>
+      {:else}
+      <ContextMenu actions={sectionActions(store, sec.id, () => startRename(sec.id))}>
+
       <button
         type="button"
         class="chip"
         class:on={store.activeSectionId === sec.id}
         aria-current={store.activeSectionId === sec.id ? 'true' : undefined}
         onclick={() => store.setActiveSection(sec.id)}
+        ondblclick={() => startRename(sec.id)}
       >
         {sec.name}<span class="cnt">{sec.graphs.length}</span>
       </button>
+      </ContextMenu>
+      {/if}
     {/each}
     <IconButton
       icon={Plus}
@@ -60,6 +78,7 @@
 </div>
 
 <style>
+  .chip-edit { flex: 0 0 150px; }
   .bar {
     display: flex;
     align-items: center;

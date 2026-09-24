@@ -34,18 +34,37 @@
          <div class="row">Right-click me</div>
        </ContextMenu>
   */
-  import { ContextMenu } from 'bits-ui';
+  import { ContextMenu, DropdownMenu } from 'bits-ui';
 
   type Props = {
     actions: ContextMenuAction[];
+    mode?: 'context' | 'dropdown';
+    label?: string;
     disabled?: boolean; // disable the whole trigger
     class?: string;
     children: Snippet; // the right-click target
   };
 
-  let { actions, disabled = false, class: klass, children }: Props = $props();
+  let { actions, mode = 'context', label = 'Actions', disabled = false, class: klass, children }: Props = $props();
 </script>
 
+{#if mode === 'dropdown'}
+  <DropdownMenu.Root>
+    <DropdownMenu.Trigger class="ctx-button" aria-label={label} {disabled} onclick={(event) => event.stopPropagation()}>
+      {@render children()}
+    </DropdownMenu.Trigger>
+    <DropdownMenu.Portal>
+      <DropdownMenu.Content class="lab-ctx-content" data-keyboard-owner="menu" sideOffset={4} align="end">
+        {#each actions as action (action.label)}
+          <DropdownMenu.Item class={action.danger ? 'lab-ctx-item lab-ctx-danger' : 'lab-ctx-item'} data-keyboard-owner="menuitem" disabled={action.disabled} onSelect={() => action.onSelect()}>
+            {#if action.icon}{@const I = action.icon}<I size={14} aria-hidden="true" />{/if}
+            <span class="lab-ctx-label">{action.label}</span>
+          </DropdownMenu.Item>
+        {/each}
+      </DropdownMenu.Content>
+    </DropdownMenu.Portal>
+  </DropdownMenu.Root>
+{:else}
 <ContextMenu.Root>
   <ContextMenu.Trigger {disabled}>
     {#snippet child({ props })}
@@ -69,7 +88,27 @@
   </ContextMenu.Portal>
 </ContextMenu.Root>
 
+{/if}
+
 <style>
+  :global(.ctx-button) {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  :global(.ctx-button:hover), :global(.ctx-button[data-state="open"]) {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
   /* transparent wrapper — never affects the target's own layout */
   .ctx-anchor {
     display: contents;
