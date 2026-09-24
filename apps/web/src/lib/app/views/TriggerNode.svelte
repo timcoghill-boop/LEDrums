@@ -92,12 +92,12 @@
   const sub = $derived.by(() => {
     if (!node) return '';
     // the resolved input source — drum · zone / MIDI note·CC / OSC address, or "unbound"
-    if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
+    if (node.kind === 'trigger') return describeTriggerSource(node.source, store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub;
     if (node.kind === 'play' || node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
     if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
     // a sequence with its own reset binding names it, so the binding reads on the canvas
     if (node.kind === 'sequence' && node.resetSource) {
-      return `in order · ↺ ${describeTriggerSource(node.resetSource, store.drums).sub}`;
+      return `in order · ↺ ${describeTriggerSource(node.resetSource, store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub}`;
     }
     return kindSummary(node);
   });

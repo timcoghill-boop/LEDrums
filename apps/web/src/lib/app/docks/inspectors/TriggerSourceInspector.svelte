@@ -17,11 +17,11 @@
      CC binding already lives on `node.source` above. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, TriggerSource } from '../../../trigger-lab/sim';
-  import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
+  import { describeTriggerSource, drumLinkHint } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
   import Link2 from '@lucide/svelte/icons/link-2';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
-  import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
+  import { zoneLabel, zoneSlotsForDrum } from '../patch-inspector';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -50,27 +50,30 @@
     !!gkey && store.midiLearnTarget?.kind === 'trigger' && store.midiLearnTarget.graphKey === gkey,
   );
 
-  const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
+  const DRUM_OPTS = $derived((store.project?.kit.drums ?? store.drums).map((d) => ({ value: d.id, label: d.label })));
 
-  /** Zone <Select> options for a drum: the zones it exposes as pads (its hoops in use),
-      always including the current binding, falling back to all four hoop labels. */
-  function zoneOptsFor(drumId: string, current: string): Array<{ value: string; label: string }> {
-    const ids: string[] = []; // ≤4 zones — a plain unique-push is plenty (no reactive Set)
-    const add = (z: string): void => {
-      if (z && !ids.includes(z)) ids.push(z);
-    };
-    for (const p of store.pads) if (p.drumId === drumId) add(String(p.zone));
-    add(current);
-    ids.sort((a, b) => Number(a) - Number(b));
-    const list = ids.length ? ids : ZONE_LABELS.map((_, i) => String(i));
-    return list.map((z) => ({ value: z, label: zoneLabel(z) }));
+  function zoneOptsFor(drumId: string): Array<{ value: string; label: string }> {
+    const map = store.project?.inputMap;
+    return map ? zoneSlotsForDrum(map, drumId).map((slot) => ({
+      value: String(slot), label: zoneLabel(map, drumId, slot),
+    })) : [];
+  }
+
+  function selectDrum(drumId: string, current: string): void {
+    if (!gkey) return;
+    const options = zoneOptsFor(drumId);
+    const zone = options.find((option) => option.value === current)?.value ?? options[0]?.value ?? '';
+    store.setTriggerSource(gkey, { kind: 'drum', drumId, zone });
   }
 
   /** Switch the trigger source to a new kind, carrying compatible fields and filling
       least-surprising defaults (first drum + centre · middle MIDI note · empty address). */
   function setSourceKind(g: string, cur: TriggerSource | undefined, kind: TriggerSource['kind']): void {
     let next: TriggerSource;
-    if (kind === 'drum') next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId: store.drums[0]?.id ?? '', zone: '0' };
+    if (kind === 'drum') {
+      const drumId = (store.project?.kit.drums ?? store.drums)[0]?.id ?? '';
+      next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId, zone: zoneOptsFor(drumId)[0]?.value ?? '' };
+    }
     else if (kind === 'midi') next = cur?.kind === 'midi' ? cur : { kind: 'midi', note: 60 };
     else next = cur?.kind === 'osc' ? cur : { kind: 'osc', address: '' };
     store.setTriggerSource(g, next);
@@ -147,14 +150,17 @@
       <Select
         value={drumId}
         options={DRUM_OPTS}
-        onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId: v, zone })}
+        segment={false}
+        onChange={(v) => selectDrum(v, zone)}
         ariaLabel="Drum"
       />
     </Field>
     <Field layout="row" label="Zone">
       <Select
         value={zone}
-        options={zoneOptsFor(drumId, zone)}
+        options={zoneOptsFor(drumId)}
+        segment={false}
+        placeholder="Select a configured zone"
         onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId, zone: v })}
         ariaLabel="Zone"
       />
@@ -227,7 +233,7 @@
     <p class="hint">Namespace / host comes from the patch device, not here.</p>
   {/if}
 
-  <ReadRow label="Resolves to" value={describeTriggerSource(src, store.drums).sub} />
+  <ReadRow label="Resolves to" value={describeTriggerSource(src, store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub} />
 
   {#if drumHint}
     <p class="hint linkhint"><Link2 size={12} aria-hidden="true" />{drumHint}</p>

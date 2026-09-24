@@ -145,7 +145,7 @@
     {/if}
 
     {#if src}
-      <ReadRow label="Resets on" value={describeTriggerSource(src, store.drums).sub} />
+      <ReadRow label="Resets on" value={describeTriggerSource(src, store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub} />
       <p class="hint resethint">
         <RotateCcw size={12} aria-hidden="true" />
         That input snaps this sequence back to step 1. It never plays anything itself.

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ContextMenu from '../../ui/ContextMenu.svelte';
+  import Ellipsis from '@lucide/svelte/icons/ellipsis';
+
   /* The behaviour rules that are contracts, not vibes — what a UI agent must keep
      true when composing or extending the system. */
 </script>
@@ -10,6 +13,15 @@
   </div>
 
   <div class="rules">
+    <div class="rule">
+      <h3>Section actions</h3>
+      <p>Section headers expose the same actions through a three-dot menu and right-click. Double-click a section name to rename it. Move commands disable at the first and last positions.</p>
+      <ContextMenu mode="dropdown" label="Section actions demo" actions={[{ label: 'Move left', disabled: true, onSelect: () => {} }, { label: 'Move right', onSelect: () => {} }, { label: 'Rename', onSelect: () => {} }]}>
+        <Ellipsis size={16} aria-hidden="true" />
+      </ContextMenu>
+      <p>Drum zones always use a dropdown with configured names. Dragging graphs shows an insertion line in both Sections and Trigger.</p>
+    </div>
+
     <div class="rule">
       <h3>Focus</h3>
       <ul>

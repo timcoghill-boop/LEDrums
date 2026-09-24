@@ -2,6 +2,7 @@
    trigger node (U1 model). ONE place to turn a TriggerSource into the short kind headline
    plus the resolved, self-describing detail line, so the node card and the Inspector never
    drift. No Svelte / DOM — unit-tested in isolation. */
+import { zoneLabel as configuredZoneLabel } from './docks/patch-inspector';
 import { ZONE_LABELS } from '../trigger-lab/fixtures';
 import { triggerSourceOf, type TriggerGraph, type TriggerSource } from '../trigger-lab/sim';
 import { formatMidiNote } from '../midi/midi-note';
@@ -36,12 +37,16 @@ export function zoneLabel(zone: string): string {
 export function describeTriggerSource(
   source: TriggerSource | undefined,
   drums: readonly DrumRef[],
+  inputMap?: InputMap,
 ): TriggerSourceLabel {
   if (!source) return { label: 'Trigger', sub: 'unbound' };
   switch (source.kind) {
     case 'drum': {
       const drum = drums.find((d) => d.id === source.drumId)?.label ?? source.drumId;
-      return { label: 'Drum', sub: `${drum} · ${zoneLabel(source.zone)}` };
+      const zone = inputMap && source.zone.trim() !== '' && Number.isInteger(Number(source.zone))
+        ? configuredZoneLabel(inputMap, source.drumId, Number(source.zone))
+        : zoneLabel(source.zone);
+      return { label: 'Drum', sub: `${drum} · ${zone}` };
     }
     case 'midi':
       // CC wins when both happen to be set — the editor only ever writes one of them.
@@ -99,7 +104,7 @@ export function drumLinkHint(
 ): string | null {
   const link = zoneLinkForSource(inputMap, source);
   if (!link) return null;
-  return `also drum trigger: ${describeTriggerSource({ kind: 'drum', ...link }, drums).sub}`;
+  return `also drum trigger: ${describeTriggerSource({ kind: 'drum', ...link }, drums, inputMap).sub}`;
 }
 
 /** The reverse of {@link zoneLinkForSource}: the authored graphs a patch zone's note/address

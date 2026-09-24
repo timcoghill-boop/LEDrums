@@ -12,6 +12,8 @@ pnpm ui-shot gen3-scope-inspector                                         # a na
 pnpm ui-shot --all --strict                                               # sweep, fail on console errors
 ```
 
+Set `UI_SHOT_OFFLINE=1` for an isolated web-only preview. It disables WebSocket connections and supplies empty MIDI ports. Pair it with `configured-zones` to inspect configured zone controls without a server.
+
 ## `--target` — the generic resolver
 
 One flag resolves an element through a chain, accessibility first, raw CSS last:
@@ -46,6 +48,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `view:<v>`  | switch workspace view (`perform` · `objects` · `sections` · `trigger` · `patch` · `monitor`) |
 | `section:<s>`| activate a section of the active song by 1-based position or name (`section:2`) — the same recall a Sections-bar chip fires |
 | `graph:<g>` | open a trigger graph by key / key-prefix (`snare`) / label; bare `graph` keeps the pre-selected pad |
+| `configured-zones` | Offline fixture: default kit with Kick zone 0 named Head center, opens a Kick graph. Uses the real input-map mutation. |
 | `new-graph` | author a fresh empty graph and select it — a clean slate for `add`/`select` free of authored-graph id clashes |
 | `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |
 | `select:<k>`| select the node most recently `add`ed with that kind (opens the Inspector slideover) |

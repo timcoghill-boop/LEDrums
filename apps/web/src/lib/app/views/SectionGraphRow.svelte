@@ -47,7 +47,7 @@
   const localPlacement = $derived(store.songs.some((candidate) => candidate.id === song.id && candidate.sections.some((s) => s.id === section.id && s.graphs.includes(graphKey))));
   const canArrange = $derived(store.canEdit && localPlacement);
   const blockedReason = $derived(store.isViewer ? 'Another client is editing' : 'Library placement is read-only — detach a copy in Objects to edit it');
-  const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.drums).sub);
+  const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub);
 
   /* The native HTML5 drag ghost snapshots the whole row — grip, status dot, and the
      hover-revealed ✕ — semi-transparent over the still-visible original, reading as a

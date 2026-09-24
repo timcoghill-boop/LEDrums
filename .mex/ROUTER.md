@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-20
+last_updated: 2026-09-25
 ---
 
 # Session Bootstrap
@@ -35,6 +35,30 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Section and graph authoring fixes (2026-09-25, branch `fix/section-authoring`):**
+Requested by Trent in this session on Trent's MacBook Pro (machine identity checked), based on
+remote `main` at `e4de6835`. Trent relayed Tim's macOS desktop drag failure and requested configured
+zone dropdowns with in-use deletion protection, section-strip rename/context actions, automatic
+drum-zone graph naming, a section overflow menu with moves/default graph fill, and subsequently
+Trigger rail graph reordering. Tauri's native drag handler is disabled for the app window;
+Sections keeps its HTML drag handlers and adds a standard text payload. The Trigger rail uses
+the same placement mutation and gap geometry. Shared section actions serve both views; header
+copy/paste moved inside the overflow menu. Move commands clamp by disabling at boundaries.
+Zone choices and source subtitles use the configured input map. Deleting a used zone is refused
+by the UI/store across local graphs, inactive shows and canonical songs, including sequence reset
+sources. This is a Settings authoring guard, not new server validation of imported projects.
+Default-format names update with source edits and active-show zone renames; custom graph names
+remain unchanged. Legacy fixture labels and configured labels are recognized, with case-insensitive
+matching and dot/bullet/hyphen separators. Agent-chosen default-fill behavior: create fresh empty
+Input/Output graphs bound to each missing configured drum-zone source, one undo transaction,
+without overwriting existing graphs or linking to other sections.
+Browser mouse checks verified both drag lists and their indicators, cross-section transfers,
+section rename/cancel/menu boundaries, configured zone selection and automatic naming with no
+console errors. Strict captures and the regenerated design system accompany the work. The
+packaged macOS interaction still requires Tim's check after release. CI/merge status belongs to
+the PR; no release has been published by this task.
+
 
 **Open graph follows the active section + unlink in the Trigger rail (2026-09-20, branch
 `fix/graph-view-follows-section`):** Session on Trent's MacBook Pro (machine identity checked).

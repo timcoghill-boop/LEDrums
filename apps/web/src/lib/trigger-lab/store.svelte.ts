@@ -40,7 +40,7 @@ import {
   sourceMatchesPad,
   triggerSourceOf,
 } from './sim';
-import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, type Pad } from './fixtures';
+import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, ZONE_LABELS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
@@ -59,7 +59,7 @@ import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smooth
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 // The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
 // SAME shape the zones editor does (one mutation path, mutation parity), not a second one.
-import { setZoneOscAddress } from '../app/docks/patch-inspector';
+import { setZoneOscAddress, zoneSlotsForDrum, zoneLabel, defaultZoneName } from '../app/docks/patch-inspector';
 import type {
   BlendMode,
   CanvasScene,
@@ -2625,6 +2625,39 @@ export class TriggerLab {
     this.client.send({ t: 'setKitNodeLayout', nodeLayout });
   }
 
+  zoneGraphUsers(drumId: string, slot: number): string[] {
+    const pools = [
+      { graphs: this.graphs, graphNames: this.graphNames },
+      ...Object.values(this.showsCtl.showLibrary).filter((show) => show.id !== this.activeShowId).map((show) => show.authored),
+      ...Object.values(this.songLibrary.songs),
+    ];
+    const users = new Set<string>();
+    for (const pool of pools) for (const [key, graph] of Object.entries(pool.graphs ?? {})) {
+      if (graph.nodes.some((node) => [node.source, node.resetSource].some((source) =>
+        source?.kind === 'drum' && source.drumId === drumId && Number(source.zone) === slot && source.zone !== '',
+      ))) users.add(pool.graphNames?.[key] ?? key);
+    }
+    return [...users];
+  }
+
+  private drumZoneGraphName(source: TriggerSource, map = this.project?.inputMap): string | null {
+    if (source.kind !== 'drum' || source.zone === '') return null;
+    const drum = (this.project?.kit.drums ?? this.drums).find((drum) => drum.id === source.drumId);
+    if (!drum) return null;
+    const label = map ? zoneLabel(map, source.drumId, Number(source.zone)) : defaultZoneName(Number(source.zone));
+    return `${drum.label || drum.id} · ${label}`;
+  }
+
+  private isDefaultDrumZoneGraphName(name: string): boolean {
+    const parts = name.split(/\s+[·•-]\s+/);
+    if (parts.length !== 2) return false;
+    const drum = (this.project?.kit.drums ?? this.drums).find((drum) => (drum.label || drum.id).toLowerCase() === parts[0]!.toLowerCase());
+    if (!drum) return false;
+    const slots = this.project ? zoneSlotsForDrum(this.project.inputMap, drum.id) : [];
+    const labels = [...ZONE_LABELS, ...Array.from({ length: 4 }, (_, slot) => defaultZoneName(slot)), ...slots.map((slot) => zoneLabel(this.project!.inputMap, drum.id, slot))];
+    return labels.some((label) => label.toLowerCase() === parts[1]!.toLowerCase());
+  }
+
   /**
    * Replace the input map (zone-node MIDI note / OSC address routing).
    *
@@ -2641,10 +2674,30 @@ export class TriggerLab {
   setInputMap(inputMap: InputMap): boolean {
     if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
     if (this.project) {
+      for (const drum of this.project.kit.drums) {
+        const remaining = zoneSlotsForDrum(inputMap, drum.id);
+        for (const slot of zoneSlotsForDrum(this.project.inputMap, drum.id)) {
+          if (remaining.includes(slot)) continue;
+          const users = this.zoneGraphUsers(drum.id, slot);
+          if (users.length) {
+            pushToast(`Remove this zone from graphs before deleting it: ${users.join(', ')}`, { tone: 'error' });
+            return false;
+          }
+        }
+      }
       if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, this.graphs))) {
         return false;
       }
       this.pushUndoSnapshot();
+      const names = { ...this.graphNames };
+      for (const [key, graph] of Object.entries(this.graphs)) {
+        const source = triggerSourceOf(graph);
+        if (source && this.isDefaultDrumZoneGraphName(this.graphLabel(key))) {
+          const name = this.drumZoneGraphName(source, inputMap);
+          if (name) names[key] = name;
+        }
+      }
+      this.graphNames = names;
       this.project = routing.applyInputMap(this.project, inputMap);
     }
     this.client.send({ t: 'setInputMap', inputMap });
@@ -2958,6 +3011,38 @@ export class TriggerLab {
     this.selectedPadKey = key;
     return key;
   }
+  addMissingDrumZoneGraphs(sectionId: string): void {
+    if (!this.canEditActiveSong || !this.project) return;
+    const song = this.activeLocalSong;
+    const section = song?.sections.find((section) => section.id === sectionId);
+    if (!song || !section) return;
+    const missing = this.project.kit.drums.flatMap((drum) =>
+      zoneSlotsForDrum(this.project!.inputMap, drum.id).flatMap((slot) => {
+        const source: TriggerSource = { kind: 'drum', drumId: drum.id, zone: String(slot) };
+        return section.graphs.some((key) => sourceMatchesPad(this.triggerSource(key), drum.id, String(slot))) ? [] : [source];
+      }),
+    );
+    if (!missing.length) return;
+    this.pushUndoSnapshot();
+    const graphs = { ...this.graphs };
+    const names = { ...this.graphNames };
+    const keys = [...section.graphs];
+    for (const source of missing) {
+      const key = freshId('graph', (candidate) => candidate in graphs);
+      const graph = graphsLib.buildEmptyGraph();
+      const trigger = graph.nodes.find((node) => node.kind === 'trigger');
+      if (trigger) trigger.source = source;
+      graphs[key] = graph;
+      names[key] = this.drumZoneGraphName(source) ?? 'New graph';
+      keys.push(key);
+    }
+    this.graphs = graphs;
+    this.graphNames = names;
+    this.songs = this.songs.map((candidate) => candidate.id === song.id
+      ? { ...candidate, sections: candidate.sections.map((item) => item.id === sectionId ? { ...item, graphs: keys } : item) }
+      : candidate);
+  }
+
   /** Clone a graph and place the clone in one local section as one undoable transaction. */
   copyGraphToSection(sectionId: string, sourceKey: string, name?: string): string | null {
     if (!this.canEditActiveSong) return null;
@@ -3384,6 +3469,10 @@ export class TriggerLab {
       if (this.refuseBindings(voice.sourceBindingRejections(scope, source, self))) return false;
     }
     this.pushUndoSnapshot();
+    const name = this.drumZoneGraphName(source);
+    if (name && this.isDefaultDrumZoneGraphName(this.graphLabel(graphKey))) {
+      this.graphNames = { ...this.graphNames, [graphKey]: name };
+    }
     trig.source = source;
     return true;
   }

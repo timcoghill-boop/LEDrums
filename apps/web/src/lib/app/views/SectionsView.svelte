@@ -154,6 +154,7 @@
   function startSectionDrag(sectionId: string, event: DragEvent): void {
     if (!store.canEdit) return;
     dragging = { kind: 'section', sectionId };
+    event.dataTransfer?.setData('text/plain', sectionId);
     event.dataTransfer?.setData('application/x-ledrums-section', sectionId);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
@@ -161,6 +162,7 @@
   function startGraphDrag(sectionId: string, graphKey: string, event: DragEvent): void {
     if (!store.canEdit) return;
     dragging = { kind: 'graph', sectionId, graphKey };
+    event.dataTransfer?.setData('text/plain', graphKey);
     event.dataTransfer?.setData('application/x-ledrums-graph', JSON.stringify({ sectionId, graphKey }));
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }

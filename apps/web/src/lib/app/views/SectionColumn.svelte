@@ -6,14 +6,12 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Song, SetlistSection } from '../setlist';
-  import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
-  import IconButton from '../../ui/IconButton.svelte';
+  import EditableRow from '../../ui/EditableRow.svelte';
+  import ContextMenu from '../../ui/ContextMenu.svelte';
+  import { sectionActions } from '../section-actions';
+  import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import SectionGraphRow from './SectionGraphRow.svelte';
   import { gapIndexAt } from './sections-dnd';
-  import Copy from '@lucide/svelte/icons/copy';
-  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
-  import CopyPlus from '@lucide/svelte/icons/copy-plus';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
   import Plus from '@lucide/svelte/icons/plus';
 
   let {
@@ -78,12 +76,8 @@
     shell.select({ kind: 'section', sectionId: section.id });
   }
 
-  const actions = $derived<ContextMenuAction[]>([
-    { label: canArrange ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => store.duplicateSection(section.id) },
-    { label: canArrange ? 'Copy' : `Copy — ${blockedReason}`, icon: Copy, disabled: !canArrange, onSelect: () => void store.copySectionToClipboard(section.id) },
-    { label: canArrange ? 'Paste' : `Paste — ${blockedReason}`, icon: ClipboardPaste, disabled: !canArrange, onSelect: () => void store.pasteSectionFromClipboard() },
-    { label: canArrange ? 'Delete' : `Delete — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canArrange, onSelect: () => store.removeSection(section.id) },
-  ]);
+  const actions = $derived(sectionActions(store, section.id, () => requestAnimationFrame(() => (editing = true))));
+
 </script>
 
 <section
@@ -108,15 +102,16 @@
       bind:editing
       onclick={selectSection}
       onCommit={(name) => store.renameSection(section.id, name)}
-      {actions}
+      actions={actions.filter((action) => action.label !== 'Rename')}
       renameLabel="Section name"
       renameDisabled={!canArrange}
       renameDisabledLabel={blockedReason}
     >
-      {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
-      {#snippet quickActions()}
-        <IconButton icon={Copy} label={canArrange ? 'Copy section to clipboard' : `Copy disabled — ${blockedReason}`} size={13} disabled={!canArrange} onclick={() => void store.copySectionToClipboard(section.id)} />
-        <IconButton icon={ClipboardPaste} label={canArrange ? 'Paste section' : `Paste disabled — ${blockedReason}`} size={13} disabled={!canArrange} onclick={() => void store.pasteSectionFromClipboard()} />
+      {#snippet trailing()}
+        <span class="colcount">{section.graphs.length}</span>
+        <ContextMenu mode="dropdown" label={`Actions for ${section.name}`} {actions}>
+          <Ellipsis size={16} aria-hidden="true" />
+        </ContextMenu>
       {/snippet}
     </EditableRow>
   </div>

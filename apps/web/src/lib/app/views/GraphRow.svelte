@@ -22,7 +22,7 @@
   }: { store: TriggerLab; graph: GraphRowVM; active?: boolean; onOpen: (key: string) => void } = $props();
 
   let editing = $state(false);
-  const sub = $derived(describeTriggerSource(store.triggerSource(graph.key), store.drums).sub);
+  const sub = $derived(describeTriggerSource(store.triggerSource(graph.key), store.project?.kit.drums ?? store.drums, store.project?.inputMap).sub);
   const canMutate = $derived(store.canMutateGraph(graph.key));
   const canCopy = $derived(store.canCopyGraph(graph.key));
   const blockedReason = $derived(store.selectedGraphEditBlockReason ?? 'This graph is read-only');

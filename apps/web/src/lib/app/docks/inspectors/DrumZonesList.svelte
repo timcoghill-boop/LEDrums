@@ -117,6 +117,7 @@
   {:else}
     <div class="zonelist">
       {#each zoneSlots as slot (slot)}
+        {@const users = store.zoneGraphUsers(drumId, slot)}
         {@const note = project ? zoneMidiNote(project.inputMap, drumId, slot) : null}
         {@const addr = project ? zoneOscAddress(project.inputMap, drumId, slot) : null}
         {@const name = project ? zoneLabel(project.inputMap, drumId, slot) : ''}
@@ -131,7 +132,7 @@
               <span class="zname">{name}</span>
               <span class="zsummary">{summary(slot)}</span>
             </button>
-            <IconButton icon={Trash2} label="Remove zone" variant="soft" size={13} onclick={() => removeZone(slot)} />
+            <IconButton icon={Trash2} label="Remove zone" disabled={users.length > 0} disabledReason={users.length ? `Remove this zone from graphs first: ${users.join(', ')}` : undefined} variant="soft" size={13} onclick={() => removeZone(slot)} />
           </div>
 
           {#if isOpen(slot)}
