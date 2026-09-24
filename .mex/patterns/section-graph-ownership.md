@@ -50,8 +50,9 @@ Source: Trent's six authoring requests, 2026-09-25.
   out with `segment={false}`. Source subtitles also need the input map for configured names.
 - `zoneGraphUsers` checks trigger and sequence-reset sources across the active graph model,
   inactive shows and canonical songs. `setInputMap` refuses deletion before undo or WS writes.
-  Clearing the last binding of an undeclared used zone also deletes it, so test fixtures that
-  only intend to rebind one zone must preserve other bindings/declarations.
+  Zone binding helpers preserve the zone declaration when clearing its last MIDI/OSC binding;
+  only `removeZone` removes its identity. Raw-map test fixtures that only intend to rebind one
+  zone must preserve other bindings/declarations.
 - Missing-default fill compares actual trigger sources, mints independent graphs, and records
   one undo snapshot. Repeating it must add nothing.
 - `UI_SHOT_OFFLINE=1` disables server/MIDI access in captures. The `configured-zones` fixture

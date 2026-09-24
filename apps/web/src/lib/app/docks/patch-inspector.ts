@@ -122,14 +122,20 @@ export function zoneOscAddress(map: InputMap, drumId: string, slot: number): str
 /** Immutably set (or clear, when null) the MIDI note for `(drumId, slot)`. */
 export function setZoneMidiNote(map: InputMap, drumId: string, slot: number, note: number | null): InputMap {
   const rest = map.midiNotes.filter((n) => !(n.drumId === drumId && n.slot === slot));
-  return { ...map, midiNotes: note === null ? rest : [...rest, { note, drumId, slot }] };
+  const next = { ...map, midiNotes: note === null ? rest : [...rest, { note, drumId, slot }] };
+  return note === null && rest.length !== map.midiNotes.length && !zoneSlotsForDrum(next, drumId).includes(slot)
+    ? addDeclaredZone(next, drumId, slot)
+    : next;
 }
 
 /** Immutably set (or clear, when null / blank) the OSC address for `(drumId, slot)`. */
 export function setZoneOscAddress(map: InputMap, drumId: string, slot: number, address: string | null): InputMap {
   const rest = map.oscMap.filter((o) => !(o.drumId === drumId && o.slot === slot));
   const trimmed = address?.trim();
-  return { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId, slot }] : rest };
+  const next = { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId, slot }] : rest };
+  return !trimmed && rest.length !== map.oscMap.length && !zoneSlotsForDrum(next, drumId).includes(slot)
+    ? addDeclaredZone(next, drumId, slot)
+    : next;
 }
 
 // --- pixel-count read-outs (C2 kit, C5 hoop) -----------------------------------------

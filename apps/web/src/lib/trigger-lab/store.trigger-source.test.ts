@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
-import { removeZone, setZoneLabel, zoneSlotsForDrum } from '../app/docks/patch-inspector';
+import { removeZone, setZoneLabel, setZoneMidiNote, setZoneOscAddress, zoneSlotsForDrum } from '../app/docks/patch-inspector';
 import { sectionActions } from '../app/section-actions';
 import { TriggerLab } from './store.svelte';
 import { makeNode, type TriggerGraph } from './sim';
@@ -158,8 +158,10 @@ describe('configured zones', () => {
     const key = Object.keys(store.graphs)[0]!;
     store.renameGraph(key, 'Kick · center');
     store.setTriggerSource(key, { kind: 'drum', drumId: 'kick', zone: '0' });
-    expect(store.setInputMap(setZoneLabel(store.project.inputMap, 'kick', 0, 'Head edge'))).toBe(true);
-    expect(store.graphLabel(key)).toBe('Kick · Head edge');
+    expect(store.setInputMap(setZoneLabel(store.project.inputMap, 'kick', 0, 'Head - edge'))).toBe(true);
+    expect(store.graphLabel(key)).toBe('Kick · Head - edge');
+    store.setTriggerSource(key, { kind: 'drum', drumId: 'snare', zone: '0' });
+    expect(store.graphLabel(key)).toBe('Snare · center');
   });
 
   it('adds only missing configured sources, is idempotent and undoes as one transaction', () => {
@@ -229,4 +231,14 @@ describe('zone use outside the open show', () => {
     store.deleteLibrarySong(libraryId);
     expect(store.setInputMap(removeZone(store.project.inputMap, 'kick', 0))).toBe(true);
   });
+});
+
+it('allows unbinding a used legacy zone without deleting its identity', () => {
+  const store = new TriggerLab(fakeClient);
+  store.project = defaultProject();
+  expect(store.setInputMap(setZoneMidiNote(store.project.inputMap, 'kick', 0, null))).toBe(true);
+  expect(store.setInputMap(setZoneOscAddress(store.project.inputMap, 'kick', 0, null))).toBe(true);
+  expect(zoneSlotsForDrum(store.project.inputMap, 'kick')).toContain(0);
+  expect(store.zoneGraphUsers('kick', 0).length).toBeGreaterThan(0);
+  expect(store.setInputMap(removeZone(store.project.inputMap, 'kick', 0))).toBe(false);
 });

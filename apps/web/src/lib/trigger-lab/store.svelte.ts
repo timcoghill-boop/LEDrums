@@ -2649,13 +2649,20 @@ export class TriggerLab {
   }
 
   private isDefaultDrumZoneGraphName(name: string): boolean {
-    const parts = name.split(/\s+[·•-]\s+/);
-    if (parts.length !== 2) return false;
-    const drum = (this.project?.kit.drums ?? this.drums).find((drum) => (drum.label || drum.id).toLowerCase() === parts[0]!.toLowerCase());
-    if (!drum) return false;
-    const slots = this.project ? zoneSlotsForDrum(this.project.inputMap, drum.id) : [];
-    const labels = [...ZONE_LABELS, ...Array.from({ length: 4 }, (_, slot) => defaultZoneName(slot)), ...slots.map((slot) => zoneLabel(this.project!.inputMap, drum.id, slot))];
-    return labels.some((label) => label.toLowerCase() === parts[1]!.toLowerCase());
+    const normalized = name.trim().toLowerCase();
+    const map = this.project?.inputMap;
+    for (const drum of this.project?.kit.drums ?? this.drums) {
+      const drumName = (drum.label || drum.id).toLowerCase();
+      const labels = [
+        ...ZONE_LABELS,
+        ...Array.from({ length: 4 }, (_, slot) => defaultZoneName(slot)),
+        ...(map ? zoneSlotsForDrum(map, drum.id).map((slot) => zoneLabel(map, drum.id, slot)) : []),
+      ];
+      if ([' · ', ' • ', ' - '].some((separator) => labels.some((label) =>
+        normalized === `${drumName}${separator}${label.toLowerCase()}`,
+      ))) return true;
+    }
+    return false;
   }
 
   /**
