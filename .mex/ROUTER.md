@@ -56,8 +56,10 @@ without overwriting existing graphs or linking to other sections.
 Browser mouse checks verified both drag lists and their indicators, cross-section transfers,
 section rename/cancel/menu boundaries, configured zone selection and automatic naming with no
 console errors. Strict captures and the regenerated design system accompany the work. The
-packaged macOS interaction still requires Tim's check after release. CI/merge status belongs to
-the PR; no release has been published by this task.
+packaged macOS interaction still requires Tim's check after release. Implementation merged through PR #222 at `6338d06d`, after workspace and desktop CI passed.
+Trent subsequently authorized an OTA release once post-merge CI is green. OTA doctor verified live
+v0.3.2; `pnpm ota prepare --patch` prepared v0.3.3 on a fresh branch from merged main. Publication
+status must be checked against the live `latest.json`, not inferred from this version bump.
 
 
 **Open graph follows the active section + unlink in the Trigger rail (2026-09-20, branch
