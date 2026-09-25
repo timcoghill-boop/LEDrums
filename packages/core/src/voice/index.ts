@@ -78,6 +78,10 @@ export {
   type ResolvedSplices,
   type SpliceBand,
   type SplicePartitionUnit,
+  orderedByPattern,
+  sequenceRanks,
+  spliceDrumRanks,
+  spliceUnitOrder,
 } from './splice';
 export * from './slice';
 export {

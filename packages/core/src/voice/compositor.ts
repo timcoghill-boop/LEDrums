@@ -50,6 +50,8 @@ import {
   unitMotionAge,
   tintPixel,
   type SpliceBand,
+  spliceDrumRanks,
+  spliceUnitOrder,
 } from './splice';
 import { buildSliceLayout, forEachSliceContribution, sliceLayoutKey, type SliceLayout } from './slice';
 import type { MixInput, ParamValues, SpliceConfig, SpliceMaterialCoverage, Voice } from './types';
@@ -222,14 +224,15 @@ interface SpliceUnit {
  */
 function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): SpliceUnit[] {
   const units: SpliceUnit[] = [];
+  const drumRanks = spliceDrumRanks(model, cfg); // once per layout; null without a dragged order
   forEachPartitionUnit(model, ranges, cfg.partition, (unit) => {
     const seed = cfg.jitter > 0 ? (cfg.seed + unit.index * 0x9e3779b1) >>> 0 : cfg.seed;
     units.push({
       start: unit.start,
       end: unit.end,
       bands: computeSpliceBands(unit.end - unit.start, cfg.count, cfg.jitter, seed),
-      orderIndex: spliceOrderIndex(unit.ordinal, unit.ordinalCount, cfg.order, cfg.seed),
-      drumOrderIndex: spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed),
+      // Patterns and dragged sequences alike, through the one function that decides both.
+      ...spliceUnitOrder(unit, cfg, drumRanks),
     });
   });
   return units;

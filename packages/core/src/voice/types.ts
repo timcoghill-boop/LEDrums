@@ -381,6 +381,16 @@ export interface SpliceConfig {
   drumOffsetMs: number;
   /** The order drums start moving in when {@link drumOffsetMs} is non-zero. */
   drumOrder: SpliceOrder;
+  /**
+   * An explicit drum firing order, by drum id — THROUGH KIT's dragged sequence. When present it
+   * replaces the drum pattern ({@link drumOrder} on a hoop cut, {@link order} on a drum cut, where
+   * the drums ARE the primary axis). Drums it does not name follow in model order, so it is always
+   * a permutation and the cascade is never longer than the pattern's.
+   */
+  drumSequence?: string[];
+  /** An explicit hoop firing order, 1-based — THROUGH DRUM's dragged sequence. Replaces
+      {@link order} on a hoop cut; hoops it does not name follow in hoop order. */
+  hoopSequence?: number[];
   /** Milliseconds each SPLICE starts after the one before it, in {@link colorOrder} — so the
       colours come on one after another rather than all together. Only visible when
       {@link waitMode} hides them first; 0 = every colour at once. */
@@ -598,6 +608,10 @@ export interface GraphNode {
   spliceLoopRetrigger?: 'stop' | 'restart';
   /** 0..1 strength of a splice colour's tint over its effect. */
   spliceTint?: number;
+  /** THROUGH KIT's explicit drum order (drum ids, first to fire first). Absent → the pattern. */
+  spliceDrumSequence?: string[];
+  /** THROUGH DRUM's explicit hoop order (1-based hoop numbers). Absent → the pattern. */
+  spliceHoopSequence?: number[];
   // slice (only meaningful when kind === 'slice'). A slice reuses every `splice*` field above
   // for what it shares with a splice — count, jitter, motion, chases, envelope, rows — and adds
   // only its geometry here. All optional + additive.

@@ -27,6 +27,7 @@ import {
   colorCascadeDelayMs,
   computeSpliceBands,
   resolveSplices,
+  sequenceRanks,
   spliceOrderIndex,
   unitEnvelopeLevel,
   unitFadeInLevel,
@@ -170,6 +171,8 @@ export interface SliceLayout {
   /** Each pixel's drum ordinal (0-based, in model order) — what DRUM CHASE staggers on. */
   drumOrdinal: Int16Array;
   drumCount: number;
+  /** Drum ids in model order, indexed by {@link drumOrdinal} — what a dragged drum sequence ranks. */
+  drumIds: string[];
   bands: SliceBand[];
 }
 
@@ -249,6 +252,7 @@ export function buildSliceLayout(model: PixelModel, ranges: readonly PixelRange[
     t,
     drumOrdinal: Int16Array.from(ordinals),
     drumCount: Math.max(1, model.drums.length),
+    drumIds: Array.from(drumOrdinal.keys()),
     bands,
   };
 }
@@ -329,6 +333,8 @@ export function forEachSliceContribution(
   const stepByDrum = new Int32Array(layout.drumCount);
   const delayByDrum = new Float64Array(layout.drumCount);
   const ready = new Uint8Array(layout.drumCount);
+  // THROUGH KIT's dragged drum order, when there is one — the same ranking a splice uses.
+  const drumRank = cfg.drumSequence ? sequenceRanks(layout.drumIds, cfg.drumSequence) : null;
 
   const levelFor = (reveal: number): number => {
     if (cfg.waitMode !== 'lit' && reveal > 0 && clocks.ageMs < reveal) return 0;
@@ -355,7 +361,8 @@ export function forEachSliceContribution(
   for (let i = 0; i < layout.ids.length; i++) {
     const drum = layout.drumOrdinal[i]!;
     if (!ready[drum]) {
-      const delay = spliceOrderIndex(drum, layout.drumCount, cfg.drumOrder, cfg.seed) * cfg.drumOffsetMs;
+      const rank = drumRank ? drumRank[drum] ?? drum : spliceOrderIndex(drum, layout.drumCount, cfg.drumOrder, cfg.seed);
+      const delay = rank * cfg.drumOffsetMs;
       const age = unitMotionAge(clocks.motionMs, delay);
       delayByDrum[drum] = delay;
       phaseByDrum[drum] = slicePhase(age, cfg);
