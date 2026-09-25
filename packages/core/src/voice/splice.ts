@@ -340,6 +340,13 @@ export function unitMotionAge(ageMs: number, delayMs: number): number {
 export function maxCascadeDelayMs(model: PixelModel, cfg: SpliceConfig): number {
   // The colour axis applies even under the `scope` partition, where there is only one unit.
   const colour = Math.max(0, (cfg.count - 1) * cfg.colorOffsetMs);
+  // A SLICE cascades across its slabs (the primary axis) and across drums, with no partition —
+  // so it takes neither branch below. Kept here rather than in `slice.ts` so the engine, the
+  // compositor and the web preview all ask ONE function how long a cascade lasts.
+  if (cfg.space) {
+    const drums = Math.max(1, model.drums.length);
+    return Math.max(0, (cfg.count - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs) + colour;
+  }
   if (cfg.partition === 'scope' || model.drums.length === 0) return colour;
   const drums = model.drums.length;
   let maximum = 0;

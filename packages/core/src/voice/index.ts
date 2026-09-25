@@ -79,6 +79,7 @@ export {
   type SpliceBand,
   type SplicePartitionUnit,
 } from './splice';
+export * from './slice';
 export {
   evalGraph,
   evalChildren,

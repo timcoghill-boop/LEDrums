@@ -51,6 +51,7 @@ import {
   tintPixel,
   type SpliceBand,
 } from './splice';
+import { buildSliceLayout, forEachSliceContribution, sliceLayoutKey, type SliceLayout } from './slice';
 import type { MixInput, ParamValues, SpliceConfig, SpliceMaterialCoverage, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
@@ -367,6 +368,8 @@ export function createDefaultCompositor(): PresentationCompositor {
   /** Band layouts by {@link spliceLayoutKey} — bounded, cleared wholesale when it fills
       (layouts are cheap to rebuild; an unbounded cache would leak across shows). */
   const spliceLayouts = new Map<string, SpliceUnit[]>();
+  /** Slice layouts by {@link sliceLayoutKey} — same bound, same reset, as the splice cache. */
+  const sliceLayouts = new Map<string, SliceLayout>();
   let spliceLayoutModel: PixelModel | null = null;
   const SPLICE_LAYOUT_CACHE_CAP = 64;
   const frameCtx: FrameModCtx = { timeMs: 0, bpm: 120 };
@@ -375,6 +378,7 @@ export function createDefaultCompositor(): PresentationCompositor {
   const bindModel = (model: PixelModel | null): void => {
     if (spliceLayoutModel === model) return;
     spliceLayouts.clear();
+    sliceLayouts.clear();
     spliceLayoutModel = model;
     generators.reset();
     mixScratch = mixInputScratch = null;
@@ -466,24 +470,30 @@ export function createDefaultCompositor(): PresentationCompositor {
             syncMixInputState(member, memberVoice, true);
           }
 
-          // 2. Cut the bands (cached — the cut never moves; only what shows in it does).
-          const layoutKey = spliceLayoutKey(cfg, model, ranges);
-          let units = spliceLayouts.get(layoutKey);
-          if (!units) {
-            if (spliceLayouts.size >= SPLICE_LAYOUT_CACHE_CAP) spliceLayouts.clear();
-            units = buildSpliceUnits(cfg, model, ranges);
-            spliceLayouts.set(layoutKey, units);
-          }
+          // 5. Downstream modifiers see the assembled frame, then it lands in `dst` scaled by the
+          //    voice envelope — the same tail as the Mix branch, shared by splice and slice.
+          const landComposite = (frameMix: Framebuffer, voiceAge: number): void => {
+            const frameRgba = frameMix.rgba;
+            const spliceMods = v.modifiers;
+            if (spliceMods && spliceMods.length) {
+              if (!v.modState) v.modState = [];
+              const modCtx = writeModCtx(modCtxScratch, v, frameCtx);
+              applyScopedModifierChain(spliceMods, v.modState, frameMix, ranges, model, voiceAge, frame.dt, modCtx);
+            }
+            for (const range of ranges) {
+              for (let i = range.start; i < range.end; i++) {
+                const j = i * 4;
+                const r = frameRgba[j]!;
+                const g = frameRgba[j + 1]!;
+                const b = frameRgba[j + 2]!;
+                const a = frameRgba[j + 3]!;
+                if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+                dst.add(i, r * level, g * level, b * level, a * level);
+              }
+            }
+          };
 
-          // 3. Record which partition units contain current material. Empty units borrow the
-          // first material-bearing unit for that member, while a member empty everywhere stays
-          // empty. The scratch belongs to the pooled voice and survives ordinary frames.
-          const coverage = ensureSpliceCoverage(v, v.spliceInputs.length, units.length);
-          for (let memberIndex = 0; memberIndex < v.spliceInputs.length; memberIndex++) {
-            scanSpliceCoverage(coverage, memberIndex, buffers[memberIndex]!.rgba, units);
-          }
-
-          // 4. Reveal each band from its member's buffer, tinted by that splice's colour.
+          // The clocks every reveal reads — the same for a splice and a slice.
           const { mix } = ensureScratch();
           mix.clear();
           const age = timeMs - v.bornAtMs;
@@ -504,6 +514,64 @@ export function createDefaultCompositor(): PresentationCompositor {
               : cfg.motionMode === 'latched'
                 ? (v.spliceMotionMs ?? 0) // only ran while lit — see `advanceLatchedSpliceMotion`
                 : age;
+
+          // A SLICE: same members, same clocks, same tail — only the geometry differs, so it
+          // branches here and rejoins at the modifier chain. The walk is shared with the web
+          // preview (`forEachSliceContribution`); this side only samples, tints and accumulates.
+          if (cfg.space) {
+            const sliceKey = sliceLayoutKey(cfg, model, ranges);
+            let layout = sliceLayouts.get(sliceKey);
+            if (!layout) {
+              if (sliceLayouts.size >= SPLICE_LAYOUT_CACHE_CAP) sliceLayouts.clear();
+              layout = buildSliceLayout(model, ranges, cfg);
+              sliceLayouts.set(sliceKey, layout);
+            }
+            const out = mix.rgba;
+            forEachSliceContribution(layout, cfg, { ageMs: age, motionMs: motionClock, pulseCycleMs }, v.velocity, (id, slot, w) => {
+              const inputIndex = cfg.inputBySlot[slot] ?? -1;
+              if (inputIndex < 0) return; // a blank slice shows nothing
+              const src = buffers[inputIndex]!.rgba;
+              const j = id * 4;
+              const r = src[j]!;
+              const g = src[j + 1]!;
+              const b = src[j + 2]!;
+              const a = src[j + 3]!;
+              if (r <= 0 && g <= 0 && b <= 0 && a <= 0) return;
+              const colour = spliceTintColour(cfg.colors[slot]);
+              if (colour) {
+                const t = tintPixel(r, g, b, colour, cfg.tint);
+                out[j] = out[j]! + t.r * w;
+                out[j + 1] = out[j + 1]! + t.g * w;
+                out[j + 2] = out[j + 2]! + t.b * w;
+              } else {
+                out[j] = out[j]! + r * w;
+                out[j + 1] = out[j + 1]! + g * w;
+                out[j + 2] = out[j + 2]! + b * w;
+              }
+              out[j + 3] = out[j + 3]! + a * w;
+            });
+            landComposite(mix, age);
+            continue;
+          }
+
+          // 2. Cut the bands (cached — the cut never moves; only what shows in it does).
+          const layoutKey = spliceLayoutKey(cfg, model, ranges);
+          let units = spliceLayouts.get(layoutKey);
+          if (!units) {
+            if (spliceLayouts.size >= SPLICE_LAYOUT_CACHE_CAP) spliceLayouts.clear();
+            units = buildSpliceUnits(cfg, model, ranges);
+            spliceLayouts.set(layoutKey, units);
+          }
+
+          // 3. Record which partition units contain current material. Empty units borrow the
+          // first material-bearing unit for that member, while a member empty everywhere stays
+          // empty. The scratch belongs to the pooled voice and survives ordinary frames.
+          const coverage = ensureSpliceCoverage(v, v.spliceInputs.length, units.length);
+          for (let memberIndex = 0; memberIndex < v.spliceInputs.length; memberIndex++) {
+            scanSpliceCoverage(coverage, memberIndex, buffers[memberIndex]!.rgba, units);
+          }
+
+          // 4. Reveal each band from its member's buffer, tinted by that splice's colour.
           const dstRgba = mix.rgba;
           for (let unitIndex = 0; unitIndex < units.length; unitIndex++) {
             const unit = units[unitIndex]!;
@@ -594,25 +662,7 @@ export function createDefaultCompositor(): PresentationCompositor {
             });
           }
 
-          // 5. Downstream modifiers see the assembled splice frame, then it lands in `dst`
-          //    scaled by the voice envelope — the same tail as the Mix branch.
-          const spliceMods = v.modifiers;
-          if (spliceMods && spliceMods.length) {
-            if (!v.modState) v.modState = [];
-            const modCtx = writeModCtx(modCtxScratch, v, frameCtx);
-            applyScopedModifierChain(spliceMods, v.modState, mix, ranges, model, age, frame.dt, modCtx);
-          }
-          for (const range of ranges) {
-            for (let i = range.start; i < range.end; i++) {
-              const j = i * 4;
-              const r = dstRgba[j]!;
-              const g = dstRgba[j + 1]!;
-              const b = dstRgba[j + 2]!;
-              const a = dstRgba[j + 3]!;
-              if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
-              dst.add(i, r * level, g * level, b * level, a * level);
-            }
-          }
+          landComposite(mix, age);
           continue;
         }
 
