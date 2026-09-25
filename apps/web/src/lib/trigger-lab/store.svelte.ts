@@ -3633,6 +3633,9 @@ export class TriggerLab {
       // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
       // splice node renders nothing at all (every slot blank), which would read as broken.
       node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit(this.buses));
+    } else if (kind === 'slice') {
+      // Same reasoning as the splice seed: four colour slabs, so a fresh Slice lights at once.
+      node = makeNode('slice', nodeId, x, y, graphsLib.sliceNodeInit(this.buses));
     } else if (kind === 'randomMod') {
       node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
@@ -3643,7 +3646,7 @@ export class TriggerLab {
     // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
     // both), announced with a toast. Only the light-making Effect node auto-wires.
     // A Splice makes light of its own, so it auto-wires for the same reason an Effect does.
-    if (node.kind === 'effect' || node.kind === 'splice') this.autoWireEffectToOutput(node);
+    if (node.kind === 'effect' || voice.isSpliceLike(node.kind)) this.autoWireEffectToOutput(node);
     return node;
   }
 
@@ -3659,7 +3662,7 @@ export class TriggerLab {
     if (!output) return;
     const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
     if (rejection === null) {
-      pushToast(`${node.kind === 'splice' ? 'Splice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
+      pushToast(`${node.kind === 'splice' ? 'Splice' : node.kind === 'slice' ? 'Slice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
     }
   }
 
@@ -3905,7 +3908,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (!this.canEditSelectedGraph) return;
-    if ((node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice') || node.mode === mode) return;
+    if ((node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind)) || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }
@@ -3914,7 +3917,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind) && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -3924,7 +3927,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind) && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }
@@ -4027,14 +4030,45 @@ export class TriggerLab {
   // fifteen near-identical setters would be noise, and every one of them would repeat the same
   // viewer guard, kind guard and undo checkpoint. The guards live here once instead.
 
+  /**
+   * What a Slice cuts: the whole kit, one drum, or a box of space. SPACE is the kit scope plus a
+   * region, so it needs no new scope value threaded through every scope consumer — and switching
+   * is ONE undo step rather than a scope change and a region change the author has to undo twice.
+   * A fresh region starts as the kit's own bounds, so choosing SPACE changes nothing visible until
+   * the box is moved or shrunk; that is the least surprising first frame.
+   */
+  setSliceOn(node: GraphNode, on: 'kit' | 'drum' | 'space'): void {
+    if (!this.canEditSelectedGraph || node.kind !== 'slice') return;
+    const current = node.sliceRegion ? 'space' : node.scope === 'drum' ? 'drum' : 'kit';
+    if (current === on) return;
+    this.pushUndoSnapshot();
+    if (on === 'space') {
+      const { min, max } = this.labModel.pm.bounds;
+      node.scope = 'kit';
+      node.targetId = undefined;
+      node.sliceRegion = {
+        cx: Math.round((min.x + max.x) / 2),
+        cy: Math.round((min.y + max.y) / 2),
+        cz: Math.round((min.z + max.z) / 2),
+        sx: Math.max(1, Math.round(max.x - min.x)),
+        sy: Math.max(1, Math.round(max.y - min.y)),
+        sz: Math.max(1, Math.round(max.z - min.z)),
+      };
+      return;
+    }
+    node.sliceRegion = undefined;
+    node.scope = on;
+    if (on === 'kit') node.targetId = undefined;
+  }
+
   /** Patch a splice node's own settings (count excepted — see {@link setSpliceCount}, which also
-      keeps the authored rows in step). Guards `node.kind === 'splice'`. */
+      keeps the authored rows in step). Guards `voice.isSpliceLike` (Splice and Slice). */
   setSpliceSetting(
     node: GraphNode,
-    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint'>>,
+    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint' | 'sliceAxis' | 'sliceRotX' | 'sliceRotY' | 'sliceRotZ' | 'sliceRegion' | 'sliceVelocity' | 'sliceIncrementPct'>>,
   ): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     this.pushUndoSnapshot();
     Object.assign(node, patch);
   }
@@ -4045,7 +4079,7 @@ export class TriggerLab {
       Shrinking keeps the trimmed rows out of the way but does not destroy the leading ones. */
   setSpliceCount(node: GraphNode, count: number): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     const next = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, Math.round(count)));
     if (next === (node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT)) return;
     this.pushUndoSnapshot();
@@ -4059,10 +4093,10 @@ export class TriggerLab {
 
   /** Patch ONE splice row — its colour (`null` clears it), effect (`null` clears it) or mute.
       Pads the authored rows out to `index` so the inspector can edit a slot that is currently
-      being filled by the cycling fallback. Guards `node.kind === 'splice'`. */
+      being filled by the cycling fallback. Guards `voice.isSpliceLike` (Splice and Slice). */
   setSpliceAt(node: GraphNode, index: number, patch: Partial<voice.SpliceDef>): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice' || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
+    if (!voice.isSpliceLike(node.kind) || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
     this.pushUndoSnapshot();
     const rows = [...(node.splices ?? [])];
     while (rows.length <= index) rows.push({});
@@ -4073,7 +4107,7 @@ export class TriggerLab {
   /** Append a splice, keeping the band count in step with the authored rows. */
   addSplice(node: GraphNode): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     const rows = node.splices ?? [];
     if (rows.length >= voice.MAX_SPLICE_COUNT) return;
     this.pushUndoSnapshot();
@@ -4085,7 +4119,7 @@ export class TriggerLab {
       node with no splices renders nothing, which is a deletion, not an edit. */
   removeSplice(node: GraphNode, index: number): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     const rows = node.splices ?? [];
     if (index < 0 || index >= rows.length || rows.length <= 1) return;
     this.pushUndoSnapshot();
@@ -4466,7 +4500,7 @@ export class TriggerLab {
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
     if (!this.canEditSelectedGraph) return;
-    if ((!isEffectNode(node) && node.kind !== 'splice') || node.busId === busId) return;
+    if ((!isEffectNode(node) && !voice.isSpliceLike(node.kind)) || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
   }
@@ -4474,7 +4508,7 @@ export class TriggerLab {
   busOf(node: GraphNode): string {
     // `splice` is a layer-producing node too — but deliberately NOT folded into `isEffectNode`,
     // which also gates the gallery / preset / effect-param paths a splice has no business in.
-    if (!isEffectNode(node) && node.kind !== 'splice') return '';
+    if (!isEffectNode(node) && !voice.isSpliceLike(node.kind)) return '';
     return node.busId || this.effectOf(node)?.busId || '';
   }
 

@@ -359,6 +359,30 @@ class ShotSeamImpl implements ShotSeam {
     this.store.setSequenceResetSource(seq, source);
   }
 
+  /** The most recently added Slice, re-resolved through the store's graph (see `setSpliceMotion`). */
+  private addedSlice() {
+    const graph = this.store.selectedGraph;
+    const addedId = this.added.get('slice')?.id;
+    return (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'slice');
+  }
+
+  /** `slice-motion:<mode>` — the Slice counterpart of `splice-motion`, so its MOVE AROUND rows render. */
+  setSliceMotion(chase: string): void {
+    const node = this.addedSlice();
+    if (!node) return;
+    this.store.setSpliceSetting(node, {
+      spliceChase: chase as 'off' | 'step' | 'smooth' | 'stagger',
+      spliceOffsetMode: 'beats',
+      spliceOffsetDivision: '1/16',
+    });
+  }
+
+  /** `slice-on:<kit|drum|space>` — what the added Slice cuts, so the SPACE box controls can be captured. */
+  setSliceOn(on: string): void {
+    const node = this.addedSlice();
+    if (node && (on === 'kit' || on === 'drum' || on === 'space')) this.store.setSliceOn(node, on);
+  }
+
   setSpliceMotion(chase: string): void {
     const graph = this.store.selectedGraph;
     const addedId = this.added.get('splice')?.id;
@@ -852,6 +876,12 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'splice-motion':
         if (arg) this.setSpliceMotion(arg);
+        break;
+      case 'slice-motion':
+        if (arg) this.setSliceMotion(arg);
+        break;
+      case 'slice-on':
+        if (arg) this.setSliceOn(arg);
         break;
       case 'splice-cascade':
         this.previewSpliceCascade(arg);

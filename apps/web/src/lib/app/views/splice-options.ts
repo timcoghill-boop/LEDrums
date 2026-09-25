@@ -25,6 +25,38 @@ export const SPLICE_CHASE_HINTS: Record<voice.SpliceChaseMode, string> = {
   stagger: 'The whole cut jumps by a set number of pixels each interval — the same movement as Spin, but landing on steps instead of gliding.',
 };
 
+/**
+ * Slice motion: the same four modes as a splice, named for what they do to SLABS. `smooth` is
+ * SWEEP rather than Spin — a splice's cut rotates round a circular hoop, but a slice's slabs travel
+ * along a straight axis, and "spin" would promise a rotation this node does not do.
+ */
+export const SLICE_CHASE_OPTS: Array<{ value: voice.SpliceChaseMode; label: string }> = [
+  { value: 'off', label: 'Off' },
+  { value: 'step', label: 'Chase' },
+  { value: 'smooth', label: 'Sweep' },
+  { value: 'stagger', label: 'Stagger' },
+];
+
+export const SLICE_CHASE_HINTS: Record<voice.SpliceChaseMode, string> = {
+  off: '',
+  step: 'Each slice hands its content to the next one, a slice per interval.',
+  smooth: 'The slices glide along the axis through the kit, one whole span per interval, wrapping round at the end.',
+  stagger: 'The slices jump along the axis by a set share of the span each interval — the same movement as Sweep, landing on steps instead of gliding.',
+};
+
+/** What a slice cuts. SPACE is a box of the room you place and size. */
+export const SLICE_ON_OPTS: Array<{ value: 'kit' | 'drum' | 'space'; label: string }> = [
+  { value: 'kit', label: 'Kit' },
+  { value: 'drum', label: 'Drum' },
+  { value: 'space', label: 'Space' },
+];
+
+export const SLICE_AXIS_OPTS: Array<{ value: voice.SliceAxis; label: string }> = [
+  { value: 'x', label: 'X' },
+  { value: 'y', label: 'Y' },
+  { value: 'z', label: 'Z' },
+];
+
 export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
   { value: '1', label: 'Forward' },
   { value: '-1', label: 'Reverse' },
@@ -43,6 +75,18 @@ export const SPLICE_NO_DIVISION = '@none';
  * millisecond field in place. Same two modes, same stored fields, one fewer row each.
  */
 export const SPLICE_FREE_MS = '@ms';
+
+/** The stored fields behind one timing. Four timings share one shape — the motion rate and the
+    three chases — across both the Splice and Slice inspectors, so they are named once, here. */
+export interface SpliceTimingKeys {
+  mode: keyof GraphNode;
+  division: keyof GraphNode;
+  ms: keyof GraphNode;
+}
+export const SPLICE_RATE_KEYS: SpliceTimingKeys = { mode: 'spliceRateMode', division: 'spliceDivision', ms: 'spliceRateMs' };
+export const SPLICE_PRIMARY_KEYS: SpliceTimingKeys = { mode: 'spliceOffsetMode', division: 'spliceOffsetDivision', ms: 'spliceOffsetMs' };
+export const SPLICE_COLOUR_KEYS: SpliceTimingKeys = { mode: 'spliceColorOffsetMode', division: 'spliceColorOffsetDivision', ms: 'spliceColorOffsetMs' };
+export const SPLICE_DRUM_KEYS: SpliceTimingKeys = { mode: 'spliceDrumOffsetMode', division: 'spliceDrumOffsetDivision', ms: 'spliceDrumOffsetMs' };
 
 /** A merged timing dropdown's options: the given divisions, then the free-time entry. */
 export const spliceTimingOptions = (divisions: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> => [
