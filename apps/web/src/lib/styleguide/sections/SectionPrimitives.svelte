@@ -6,6 +6,7 @@
   import SearchField from '../../ui/SearchField.svelte';
   import Select from '../../ui/Select.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
+  import OrderList from '../../ui/OrderList.svelte';
   import EasePicker, { type EaseSpec } from '../../ui/EasePicker.svelte';
   import CurveField, { type CurveHit, type CurveValue } from '../../ui/CurveField.svelte';
   import CurveFieldMini from '../../ui/CurveFieldMini.svelte';
@@ -178,6 +179,17 @@
     { id: 'effects', label: 'Effects', icon: Sparkles },
     { id: 'graphs', label: 'Graphs', icon: Activity },
   ];
+  // OrderList demo — a live order the card really reorders, as the MOVE THROUGH chips do.
+  let demoOrder = $state([
+    { id: 'kick', label: 'Kick' },
+    { id: 'snare', label: 'Snare' },
+    { id: 'tom1', label: 'Tom 1' },
+    { id: 'tom2', label: 'Tom 2' },
+  ]);
+  const reorderDemo = (ids: string[]): void => {
+    const byId = new Map(demoOrder.map((item) => [item.id, item]));
+    demoOrder = ids.map((id) => byId.get(id)!);
+  };
 </script>
 
 <section class="block" id="primitives">
@@ -354,6 +366,16 @@
         <SegmentedControl value={mode} options={modeOptions} onChange={(v) => (mode = v)} ariaLabel="Mode" />
         <SegmentedControl value={layerBus} options={busOptions} onChange={(v) => (layerBus = v)} ariaLabel="Layer bus" />
         <Tabs bind:value={inspectorTab} tabs={inspectorTabs} ariaLabel="Inspector" />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Order list"
+      src="lib/ui/OrderList"
+      note="A short sequence the author puts in order — which drum lights first, second, third. Drag a chip to a new place, or focus it and press ← / → to nudge it; focus stays on the chip that moved. The drop gap is decided per chip, so it stays right when the chips wrap. Used by MOVE THROUGH beside a SegmentedControl of one-click patterns; a pattern replaces a dragged order."
+    >
+      <div class="comp-stack">
+        <OrderList items={demoOrder} onReorder={reorderDemo} ariaLabel="Demo drum order" />
       </div>
     </DemoCard>
 

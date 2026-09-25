@@ -3,7 +3,7 @@ import { voice } from '@ledrums/core';
 import { makeNode } from '../../trigger-lab/sim';
 import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
 import { DIVISION_OPTS } from './node-options';
-import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_WAIT_MODE_HINTS, SPLICE_WAIT_MODE_OPTS, SPLICE_NO_EFFECT, SPLICE_NO_DIVISION, SPLICE_FREE_MS, describeSpliceRow, spliceTimingOptions, spliceTimingPatch, spliceTimingValue, spliceEffectOptions, spliceRows } from './splice-options';
+import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_WAIT_MODE_HINTS, SPLICE_WAIT_MODE_OPTS, SPLICE_NO_EFFECT, SPLICE_NO_DIVISION, SPLICE_FREE_MS, AROUND_LAYER, THROUGH_DRUM_LAYER, aroundLabel, effectiveOrder, layerActive, throughKitLayer, describeSpliceRow, spliceTimingOptions, spliceTimingPatch, spliceTimingValue, spliceEffectOptions, spliceRows } from './splice-options';
 
 /* The Splice inspector's row derivation. The rows are what an author actually edits, so the
    thing worth pinning is that they show what will RENDER — including the slots currently
@@ -197,5 +197,48 @@ describe('merged timing dropdown', () => {
   it('None stores undefined, exactly as the division Select it replaced did', () => {
     // So a show saved before the merge reads back byte-identically.
     expect(spliceTimingPatch(SPLICE_NO_DIVISION, KEYS)).toEqual({ spliceOffsetMode: 'beats', spliceOffsetDivision: undefined });
+  });
+});
+
+/* MOVE THROUGH's layers map "where the light is sent" onto the engine's original cascade axes, so
+   existing shows read back unchanged. The map is the thing to pin: the wrong field here means an
+   inspector row that edits a cascade other than the one it names. */
+describe('MOVE THROUGH layers', () => {
+  it('THROUGH KIT is the drum axis on a hoop cut, and the primary axis on a drum cut', () => {
+    expect(throughKitLayer('hoop')).toMatchObject({ keys: { mode: 'spliceDrumOffsetMode' }, pattern: 'spliceDrumOrder', sequence: 'spliceDrumSequence' });
+    expect(throughKitLayer('drum')).toMatchObject({ keys: { mode: 'spliceOffsetMode' }, pattern: 'spliceOrder', sequence: 'spliceDrumSequence' });
+  });
+
+  it('THROUGH DRUM is the primary axis with a hoop sequence; AROUND is the colour axis, pattern only', () => {
+    expect(THROUGH_DRUM_LAYER).toMatchObject({ keys: { mode: 'spliceOffsetMode' }, sequence: 'spliceHoopSequence' });
+    expect(AROUND_LAYER).toMatchObject({ keys: { mode: 'spliceColorOffsetMode' }, pattern: 'spliceColorOrder', sequence: null });
+  });
+
+  it('names AROUND by what the splices go round', () => {
+    expect(aroundLabel('hoop')).toBe('AROUND HOOP');
+    expect(aroundLabel('drum')).toBe('AROUND DRUM');
+    expect(aroundLabel('scope')).toBe('ALONG THE CUT');
+  });
+
+  it('a layer is on with a division, or a free time above zero — and off otherwise', () => {
+    const keys = throughKitLayer('hoop').keys;
+    expect(layerActive(spliceNode(), keys)).toBe(false);
+    expect(layerActive(spliceNode({ spliceDrumOffsetDivision: '1/8' }), keys)).toBe(true);
+    expect(layerActive(spliceNode({ spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 0 }), keys)).toBe(false);
+    expect(layerActive(spliceNode({ spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 120 }), keys)).toBe(true);
+  });
+});
+
+describe('effectiveOrder', () => {
+  const ids = ['kick', 'snare', 'tom1'];
+
+  it('follows the pattern when nothing has been dragged', () => {
+    expect(effectiveOrder(ids, undefined, 'up', 1)).toEqual(ids);
+    expect(effectiveOrder(ids, undefined, 'down', 1)).toEqual(['tom1', 'snare', 'kick']);
+  });
+
+  it('follows a dragged sequence, completed exactly as the engine completes it', () => {
+    // Unknown ids dropped, missing ones appended in model order — so the chips never disagree with the lights.
+    expect(effectiveOrder(ids, ['ghost', 'tom1'], 'up', 1)).toEqual(['tom1', 'kick', 'snare']);
   });
 });

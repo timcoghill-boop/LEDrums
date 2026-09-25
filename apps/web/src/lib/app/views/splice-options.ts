@@ -149,6 +149,72 @@ export const SPLICE_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string 
   { value: 'random', label: 'Random' },
 ];
 
+/**
+ * The order a splice's colours come on AROUND a hoop. The same four patterns as the drum and hoop
+ * orders, but Up and Down mean nothing on a circle, so they read Forward and Reverse — along the
+ * hoop's own pixel direction, which is why this says forward rather than clockwise: which way that
+ * is depends on how the hoop was wired.
+ */
+export const SPLICE_AROUND_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string }> = [
+  { value: 'up', label: 'Forward' },
+  { value: 'down', label: 'Reverse' },
+  { value: 'outside-in', label: 'Outside in' },
+  { value: 'random', label: 'Random' },
+];
+
+/**
+ * MOVE THROUGH's three layers, and which stored fields each one edits. The engine keeps its
+ * original axes — a primary cascade across the cut's units, a drum cascade, a colour cascade — so
+ * existing shows read back unchanged; this is only the map from "where the light is sent" to those.
+ *
+ * THROUGH KIT is drum to drum. On a hoop cut that is the separate DRUM axis; on a drum cut the drums
+ * ARE the units, so it is the primary axis. THROUGH DRUM is hoop to hoop, which only a hoop cut has.
+ * AROUND is splice to splice within each unit, on any cut.
+ */
+export interface ThroughLayer {
+  keys: SpliceTimingKeys;
+  /** The pattern field the preset buttons set (and a dragged sequence overrides). */
+  pattern: 'spliceOrder' | 'spliceDrumOrder' | 'spliceColorOrder';
+  /** The dragged-sequence field, or null for a layer ordered by pattern alone. */
+  sequence: 'spliceDrumSequence' | 'spliceHoopSequence' | null;
+}
+
+export function throughKitLayer(partition: voice.SplicePartition | undefined): ThroughLayer {
+  return (partition ?? 'hoop') === 'drum'
+    ? { keys: SPLICE_PRIMARY_KEYS, pattern: 'spliceOrder', sequence: 'spliceDrumSequence' }
+    : { keys: SPLICE_DRUM_KEYS, pattern: 'spliceDrumOrder', sequence: 'spliceDrumSequence' };
+}
+export const THROUGH_DRUM_LAYER: ThroughLayer = { keys: SPLICE_PRIMARY_KEYS, pattern: 'spliceOrder', sequence: 'spliceHoopSequence' };
+export const AROUND_LAYER: ThroughLayer = { keys: SPLICE_COLOUR_KEYS, pattern: 'spliceColorOrder', sequence: null };
+
+/** The AROUND row's label: the unit the splices go round. A scope cut is one run the splices lie along. */
+export function aroundLabel(partition: voice.SplicePartition | undefined): string {
+  const p = partition ?? 'hoop';
+  return p === 'drum' ? 'AROUND DRUM' : p === 'scope' ? 'ALONG THE CUT' : 'AROUND HOOP';
+}
+
+/** Whether a layer is sending light anywhere — a division chosen, or a free time above zero. The
+    Order row appears only then: an order for a layer that is off is a control that does nothing. */
+export function layerActive(node: GraphNode, keys: SpliceTimingKeys): boolean {
+  if (node[keys.mode] === 'time') return ((node[keys.ms] as number | undefined) ?? 0) > 0;
+  return typeof node[keys.division] === 'string' && (node[keys.division] as string).length > 0;
+}
+
+/**
+ * The ids in the order they will fire: a dragged sequence (completed — unknown ids dropped, missing
+ * ones appended, exactly as the engine ranks them), else the pattern's own order. What the chips
+ * show, so the inspector always reads the way the lights will come on.
+ */
+export function effectiveOrder(ids: readonly string[], sequence: readonly string[] | undefined, pattern: voice.SpliceOrder, seed: number): string[] {
+  if (sequence && sequence.length) {
+    const ranks = voice.sequenceRanks(ids, sequence);
+    const out = new Array<string>(ids.length);
+    ids.forEach((id, i) => (out[ranks[i]!] = id));
+    return out;
+  }
+  return voice.orderedByPattern(ids.length, pattern, seed).map((i) => ids[i]!);
+}
+
 export const SPLICE_MOTION_MODE_OPTS: Array<{ value: voice.SpliceMotionMode; label: string }> = [
   { value: 'restart', label: 'Restart' },
   { value: 'continuous', label: 'Continuous' },

@@ -106,6 +106,20 @@ describe('every shared action lands on a slice (the kind-guard trap)', () => {
   });
 });
 
+describe('MOVE THROUGH sequences reach the store', () => {
+  it('a dragged drum and hoop order land on a splice and a slice alike', () => {
+    const { store, node: slice } = withSlice();
+    store.setSpliceSetting(slice, { spliceDrumSequence: ['snare', 'kick'] });
+    expect(slice.spliceDrumSequence).toEqual(['snare', 'kick']);
+
+    const splice = store.addNode('splice', 400, 0)!;
+    store.setSpliceSetting(splice, { spliceDrumSequence: ['snare', 'kick'], spliceHoopSequence: [3, 1, 2] });
+    expect(splice.spliceHoopSequence).toEqual([3, 1, 2]);
+    store.setSpliceSetting(splice, { spliceDrumOrder: 'down', spliceDrumSequence: undefined });
+    expect(splice.spliceDrumSequence, 'a pattern clears the dragged order').toBeUndefined();
+  });
+});
+
 describe('setSliceOn — KIT / DRUM / SPACE', () => {
   it('SPACE adds a region the size of the kit, so nothing visibly changes on the first frame', () => {
     const { store, node } = withSlice();

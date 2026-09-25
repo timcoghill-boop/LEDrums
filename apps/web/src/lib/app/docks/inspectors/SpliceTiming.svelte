@@ -23,6 +23,7 @@
     fallback,
     msDefault,
     msMin,
+    layout = 'row',
   }: {
     store: TriggerLab;
     node: GraphNode;
@@ -35,10 +36,13 @@
     fallback: string;
     msDefault: number;
     msMin: number;
+    /** `stack` puts the label above the dropdown — for long labels like THROUGH DRUM, whose ⓘ the
+        row layout's label column would clip. */
+    layout?: 'row' | 'stack';
   } = $props();
 </script>
 
-<Field layout="row" {label} {info}>
+<Field {layout} {label} {info}>
   <Select
     value={spliceTimingValue(node[keys.mode] as 'beats' | 'time' | undefined, node[keys.division] as string | undefined, fallback)}
     options={spliceTimingOptions(options)}

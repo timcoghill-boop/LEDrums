@@ -21,7 +21,7 @@ const stubStore = () =>
   ({
     effects: [],
     buses: [{ id: 'base', name: 'Base', polyphony: 'poly' }],
-    kitDrumInfos: [{ id: 'kick', label: 'Kick', hoopCount: 2 }],
+    kitDrumInfos: [{ id: 'kick', label: 'Kick', hoopCount: 2 }, { id: 'snare', label: 'Snare', hoopCount: 2 }],
     busOf: () => 'base',
     setSliceOn: vi.fn(),
     setTargetId: vi.fn(),
@@ -75,10 +75,11 @@ describe('SliceNodeInspector — what it cuts', () => {
 });
 
 describe('SliceNodeInspector — the same movement language as Splice', () => {
-  it('heads the motion MOVE AROUND and names the direction MOVE THROUGH', () => {
-    const { getAllByText } = renderInspector({ spliceChase: 'step' });
-    expect(getAllByText('MOVE AROUND')).toHaveLength(1);
-    expect(getAllByText('MOVE THROUGH')).toHaveLength(1);
+  it('has the same three driving sections as Splice, with Direction inside MOVE AROUND', () => {
+    const { container, getByLabelText } = renderInspector({ spliceChase: 'step' });
+    const headings = [...container.querySelectorAll('h4')].map((h) => h.textContent?.trim());
+    expect(headings.slice(0, 3)).toEqual(['Slice', 'MOVE AROUND', 'MOVE THROUGH']);
+    expect(getByLabelText('Slice direction')).toBeTruthy();
   });
 
   it('calls continuous motion SWEEP — slabs travel along an axis, they do not spin', () => {
@@ -87,21 +88,28 @@ describe('SliceNodeInspector — the same movement language as Splice', () => {
     expect(queryByText('Spin')).toBeNull();
   });
 
-  it('has SLICE CHASE and MOVE THROUGH MODE, and COLOUR CHASE once the wait is not Lit', () => {
+  it('MOVE THROUGH has Mode, THROUGH KIT and THROUGH SLICES, and COLOUR CHASE once not Lit', () => {
     const lit = renderInspector();
-    expect(within(lit.container).getByLabelText('Slice chase division')).toBeTruthy();
     expect(within(lit.container).getByLabelText('Slice move through mode')).toBeTruthy();
+    expect(within(lit.container).getByLabelText('Through kit division')).toBeTruthy();
+    expect(within(lit.container).getByLabelText('Through slices division')).toBeTruthy();
     expect(within(lit.container).queryByLabelText('Colour chase division')).toBeNull();
 
     const pulse = renderInspector({ spliceWaitMode: 'pulse' });
     expect(within(pulse.container).getByLabelText('Colour chase division')).toBeTruthy();
   });
 
-  it('hides DRUM CHASE for a one-drum slice — there is nothing to stagger across', () => {
-    const kit = renderInspector();
-    expect(within(kit.container).getByLabelText('Drum chase division')).toBeTruthy();
+  it('hides THROUGH KIT for a one-drum slice — there is no kit to send light through', () => {
     const drum = renderInspector({ scope: 'drum' });
-    expect(within(drum.container).queryByLabelText('Drum chase division')).toBeNull();
+    expect(within(drum.container).queryByLabelText('Through kit division')).toBeNull();
+  });
+
+  it('THROUGH KIT takes a dragged drum order, exactly as on a Splice', () => {
+    const store = stubStore();
+    const { getByLabelText } = renderInspector({ spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 200 }, store);
+    const kick = getByLabelText('Through kit order').querySelector('button')!;
+    kick.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(store.setSpliceSetting).toHaveBeenCalledWith(expect.anything(), { spliceDrumSequence: ['snare', 'kick'] });
   });
 
   it('measures a stagger in percent of the span, not pixels', () => {
@@ -124,7 +132,7 @@ describe('SliceNodeInspector — shared sections', () => {
   it('prints no help paragraphs once the slices are filled in — explanations live in the ⓘ', () => {
     const { container, getByLabelText } = renderInspector({ spliceWaitMode: 'pulse' });
     expect(container.querySelectorAll('p.hint')).toHaveLength(0);
-    for (const label of ['On', 'Axis', 'Tilt', 'Velocity', 'SLICE CHASE', 'MOVE THROUGH MODE', 'COLOUR CHASE', 'DRUM CHASE']) {
+    for (const label of ['On', 'Axis', 'Tilt', 'Velocity', 'Mode', 'THROUGH KIT', 'THROUGH SLICES', 'COLOUR CHASE']) {
       expect(getByLabelText(`About ${label}`), label).toBeTruthy();
     }
   });

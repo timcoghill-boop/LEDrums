@@ -18,24 +18,24 @@
   import SpliceTiming from './SpliceTiming.svelte';
   import SpliceEnvelopeFields from './SpliceEnvelopeFields.svelte';
   import SpliceRows from './SpliceRows.svelte';
+  import SpliceThroughLayer from './SpliceThroughLayer.svelte';
   import { DIVISION_OPTS } from '../../views/node-options';
   import {
     SLICE_AXIS_OPTS,
     SLICE_CHASE_HINTS,
     SLICE_CHASE_OPTS,
     SLICE_ON_OPTS,
-    SPLICE_COLOUR_KEYS,
     SPLICE_DIRECTION_OPTS,
-    SPLICE_DRUM_KEYS,
     SPLICE_MOTION_MODE_HINTS,
     SPLICE_MOTION_MODE_OPTS,
-    SPLICE_NO_DIVISION,
     SPLICE_ORDER_OPTS,
     SPLICE_PRIMARY_KEYS,
     SPLICE_RATE_KEYS,
     SPLICE_WAIT_MODE_HINTS,
     SPLICE_WAIT_MODE_OPTS,
-    spliceOffsetDivisionOptions,
+    AROUND_LAYER,
+    throughKitLayer,
+    type ThroughLayer,
   } from '../../views/splice-options';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
@@ -49,7 +49,6 @@
   // The three 0…1 amounts are edited in whole percent: Slider keeps the REAL number in its box
   // and shows a transforming format beside it, so a 0…1 value formatted as a percentage reads
   // "1 100%". Scaling to 0…100 makes the box and the unit agree — "100 %".
-  const offsetDivisions = spliceOffsetDivisionOptions(DIVISION_OPTS);
   const drumOptions = $derived(store.kitDrumInfos.map((d) => ({ value: d.id, label: d.label })));
 
   // Explanations live in each label's ⓘ, never as a paragraph under the field (Field.svelte).
@@ -58,10 +57,14 @@
   const TILT_INFO = 'Tilts the slices about the world X, Y and Z axes, in degrees — so a slice can cut diagonally through the kit.';
   const VELOCITY_INFO =
     'How much a hit’s velocity sets the brightness. 0% ignores it — every hit is full brightness; 100% makes a soft hit a dim slice and a hard hit a bright one.';
-  const SLICE_CHASE_INFO = 'Starts each slice later than the one before it, in the order below — so the light travels through the kit slab by slab.';
+  const THROUGH_SLICES_INFO = 'Sends the light from slice to slice through the kit, one step apart, in the order below.';
+  const THROUGH_KIT_INFO = 'Sends the light from drum to drum across the kit, one step apart, in the order below.';
+  // A slice has no partition, so drums are always their own axis and slabs are the primary one.
+  const KIT_LAYER = throughKitLayer('hoop');
+  const SLICES_LAYER: ThroughLayer = { keys: SPLICE_PRIMARY_KEYS, pattern: 'spliceOrder', sequence: null };
+  const drumItems = $derived(store.kitDrumInfos.map((d) => ({ id: d.id, label: d.label })));
   const COLOUR_CHASE_INFO =
     'Brings the colours on one after another instead of all together, in the colour order below. With Pulse each one fades in and out on its own.';
-  const DRUM_CHASE_INFO = 'Starts each drum later than the one before it, in the order below — so the slices arrive at the kit one drum at a time.';
   const REGION_INFO = 'The box of space to slice, in millimetres: where its centre sits, and how big it is along each axis.';
 
   type RegionKey = 'cx' | 'cy' | 'cz' | 'sx' | 'sy' | 'sz';
@@ -236,29 +239,21 @@
           </Field>
         {/if}
 
-        <Field label="MOVE THROUGH">
+        <Field label="Direction">
           <SegmentedControl
             value={String(node.spliceDirection ?? 1)}
             options={SPLICE_DIRECTION_OPTS}
             onChange={(v) => store.setSpliceSetting(node, { spliceDirection: v === '-1' ? -1 : 1 })}
-            ariaLabel="Slice move through"
+            ariaLabel="Slice direction"
           />
         </Field>
       {/if}
+    </section>
 
-      <SpliceTiming {store} {node} label="SLICE CHASE" info={SLICE_CHASE_INFO} aria="Slice chase" keys={SPLICE_PRIMARY_KEYS} options={offsetDivisions} fallback={SPLICE_NO_DIVISION} msDefault={0} msMin={0} />
+    <section class="group">
+      <h4 class="grouptitle">MOVE THROUGH</h4>
 
-      <Field layout="row" label="Slice order">
-        <Select
-          value={node.spliceOrder ?? 'up'}
-          options={SPLICE_ORDER_OPTS}
-          segment={false}
-          onChange={(v) => store.setSpliceSetting(node, { spliceOrder: v as voice.SpliceOrder })}
-          ariaLabel="Slice order"
-        />
-      </Field>
-
-      <Field label="MOVE THROUGH MODE" info={SPLICE_WAIT_MODE_HINTS[waitMode]}>
+      <Field label="Mode" info={SPLICE_WAIT_MODE_HINTS[waitMode]}>
         <SegmentedControl
           value={waitMode}
           options={SPLICE_WAIT_MODE_OPTS}
@@ -267,34 +262,16 @@
         />
       </Field>
 
-      {#if waitMode !== 'lit'}
-        <SpliceTiming {store} {node} label="COLOUR CHASE" info={COLOUR_CHASE_INFO} aria="Colour chase" keys={SPLICE_COLOUR_KEYS} options={offsetDivisions} fallback={SPLICE_NO_DIVISION} msDefault={0} msMin={0} />
-
-        <Field layout="row" label="Colour order">
-          <Select
-            value={node.spliceColorOrder ?? 'up'}
-            options={SPLICE_ORDER_OPTS}
-            segment={false}
-            onChange={(v) => store.setSpliceSetting(node, { spliceColorOrder: v as voice.SpliceOrder })}
-            ariaLabel="Colour order"
-          />
-        </Field>
-      {/if}
-
-      <!-- One drum has nothing to stagger across, so a DRUM slice hides the drum axis. -->
+      <!-- One drum has nothing to send light across, so a DRUM slice hides THROUGH KIT. -->
       {#if on !== 'drum'}
-        <SpliceTiming {store} {node} label="DRUM CHASE" info={DRUM_CHASE_INFO} aria="Drum chase" keys={SPLICE_DRUM_KEYS} options={offsetDivisions} fallback={SPLICE_NO_DIVISION} msDefault={0} msMin={0} />
-
-        <Field layout="row" label="Drum order">
-          <Select
-            value={node.spliceDrumOrder ?? 'up'}
-            options={SPLICE_ORDER_OPTS}
-            segment={false}
-            onChange={(v) => store.setSpliceSetting(node, { spliceDrumOrder: v as voice.SpliceOrder })}
-            ariaLabel="Drum order"
-          />
-        </Field>
+        <SpliceThroughLayer {store} {node} label="THROUGH KIT" info={THROUGH_KIT_INFO} aria="Through kit" layer={KIT_LAYER} items={drumItems} />
       {/if}
+      <SpliceThroughLayer {store} {node} label="THROUGH SLICES" info={THROUGH_SLICES_INFO} aria="Through slices" layer={SLICES_LAYER} orderOptions={SPLICE_ORDER_OPTS} />
+      <!-- Colour arrival is a REVEAL: with Lit every colour is already on. -->
+      {#if waitMode !== 'lit'}
+        <SpliceThroughLayer {store} {node} label="COLOUR CHASE" info={COLOUR_CHASE_INFO} aria="Colour chase" layer={AROUND_LAYER} orderOptions={SPLICE_ORDER_OPTS} />
+      {/if}
+
     </section>
 
     <section class="group">

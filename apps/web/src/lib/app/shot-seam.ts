@@ -359,6 +359,27 @@ class ShotSeamImpl implements ShotSeam {
     this.store.setSequenceResetSource(seq, source);
   }
 
+  /** `splice-through` — switch on every MOVE THROUGH layer of the added splice (kit, drum, around)
+      with a dragged drum order, so all three layers and both order controls render for a capture. */
+  setSpliceThrough(): void {
+    const graph = this.store.selectedGraph;
+    const addedId = this.added.get('splice')?.id;
+    const node = (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'splice');
+    if (!node) return;
+    const drums = this.store.kitDrumInfos.map((d) => d.id);
+    this.store.setSpliceSetting(node, {
+      spliceWaitMode: 'pulse',
+      spliceDrumOffsetMode: 'beats',
+      spliceDrumOffsetDivision: '1/2',
+      spliceOffsetMode: 'beats',
+      spliceOffsetDivision: '1/16',
+      spliceColorOffsetMode: 'beats',
+      spliceColorOffsetDivision: '1/32',
+      // Reversed, so the chips visibly show a dragged order rather than the model's own.
+      spliceDrumSequence: [...drums].reverse(),
+    });
+  }
+
   /** The most recently added Slice, re-resolved through the store's graph (see `setSpliceMotion`). */
   private addedSlice() {
     const graph = this.store.selectedGraph;
@@ -876,6 +897,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'splice-motion':
         if (arg) this.setSpliceMotion(arg);
+        break;
+      case 'splice-through':
+        this.setSpliceThrough();
         break;
       case 'slice-motion':
         if (arg) this.setSliceMotion(arg);

@@ -315,5 +315,10 @@
     "state": "view:trigger,new-graph,add:slice,select:slice,slice-on:space",
     "target": "Inspector",
     "viewport": "1600x2800"
+  },
+  "splice-through": {
+    "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger,splice-through",
+    "target": "Inspector",
+    "viewport": "1600x3000"
   }
 }
