@@ -25,11 +25,6 @@ export const SPLICE_CHASE_HINTS: Record<voice.SpliceChaseMode, string> = {
   stagger: 'The whole cut jumps by a set number of pixels each interval — the same movement as Spin, but landing on steps instead of gliding.',
 };
 
-export const SPLICE_RATE_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
-  { value: 'beats', label: 'Division' },
-  { value: 'time', label: 'Time' },
-];
-
 export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
   { value: '1', label: 'Forward' },
   { value: '-1', label: 'Reverse' },
@@ -38,6 +33,43 @@ export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
 /** Sentinel for "no offset division". An empty string reads as UNSET to the Select, which then
     shows its placeholder instead of the option's own label. */
 export const SPLICE_NO_DIVISION = '@none';
+
+/**
+ * The Select value that stands for "free time in milliseconds" in a merged timing dropdown.
+ *
+ * Every splice timing used to be TWO controls — a Division | Time toggle, then a row that changed
+ * shape underneath it — repeated four times (rate, and the hoop, drum and colour chases). One
+ * dropdown carries both now: the musical divisions, then "Free (ms)", which reveals the
+ * millisecond field in place. Same two modes, same stored fields, one fewer row each.
+ */
+export const SPLICE_FREE_MS = '@ms';
+
+/** A merged timing dropdown's options: the given divisions, then the free-time entry. */
+export const spliceTimingOptions = (divisions: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> => [
+  ...divisions,
+  { value: SPLICE_FREE_MS, label: 'Free (ms)' },
+];
+
+/** The value a merged timing dropdown shows for a stored `(mode, division)` pair. */
+export function spliceTimingValue(mode: 'beats' | 'time' | undefined, division: string | undefined, fallback: string): string {
+  if (mode === 'time') return SPLICE_FREE_MS;
+  return division ?? fallback;
+}
+
+/**
+ * Translate a merged timing dropdown's choice back into the node's two stored fields.
+ *
+ * Picking a division also sets the mode back to `beats`, so leaving Free is one click rather
+ * than a trip to a separate toggle. The "none" sentinel stores `undefined`, exactly as the
+ * division Select it replaces did — so a show saved before this change reads back identically.
+ */
+export function spliceTimingPatch(
+  choice: string,
+  keys: { mode: string; division: string },
+): Record<string, 'beats' | 'time' | string | undefined> {
+  if (choice === SPLICE_FREE_MS) return { [keys.mode]: 'time' };
+  return { [keys.mode]: 'beats', [keys.division]: choice === SPLICE_NO_DIVISION ? undefined : choice };
+}
 
 /** Division options for a cascade offset, with an explicit "no offset" entry first. */
 export const spliceOffsetDivisionOptions = (divisions: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> => [
@@ -64,11 +96,6 @@ export const SPLICE_LOOP_RETRIGGER_HINTS: Record<'stop' | 'restart', string> = {
   stop: 'Hit again to stop the loop — the node toggles itself, so repeated hits never stack loops.',
   restart: 'Hit again to re-sync the loop from the top, replacing the one already running.',
 };
-
-export const SPLICE_OFFSET_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
-  { value: 'beats', label: 'Division' },
-  { value: 'time', label: 'Time' },
-];
 
 /** The order the units start moving in when a cascade offset is set. */
 export const SPLICE_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string }> = [

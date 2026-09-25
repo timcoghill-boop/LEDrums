@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, within } from '@testing-library/svelte';
 import type { GraphNode } from '../../../trigger-lab/sim';
 import type { TriggerLab } from '../../../trigger-lab/store.svelte';
 import { makeNode } from '../../../trigger-lab/sim';
@@ -60,10 +60,10 @@ describe('SpliceNodeInspector movement language', () => {
 
     expect(getByLabelText('Splice move through')).toBeTruthy();
     expect(getByLabelText('Splice move through mode')).toBeTruthy();
-    expect(getByLabelText('Hoop chase mode')).toBeTruthy();
+    expect(getByLabelText('Hoop chase division')).toBeTruthy();
     expect(getByLabelText('Hoop chase milliseconds')).toBeTruthy();
-    expect(getByLabelText('Drum chase mode')).toBeTruthy();
-    expect(getByLabelText('Colour chase mode')).toBeTruthy();
+    expect(getByLabelText('Drum chase division')).toBeTruthy();
+    expect(getByLabelText('Colour chase division')).toBeTruthy();
   });
 
   it('names the primary axis DRUM CHASE and hides the secondary drum chase for drum cuts', () => {
@@ -71,7 +71,52 @@ describe('SpliceNodeInspector movement language', () => {
 
     expect(container.textContent).toContain('DRUM CHASE');
     expect(container.textContent).not.toContain('HOOP CHASE');
-    expect(getByLabelText('Drum chase mode')).toBeTruthy();
-    expect(queryByLabelText('Hoop chase mode')).toBeNull();
+    expect(getByLabelText('Drum chase division')).toBeTruthy();
+    expect(queryByLabelText('Hoop chase division')).toBeNull();
+  });
+});
+
+/* The simplification pass. It changed no stored field and no label — only how much the panel
+   asks you to read. These pin the two things it bought, so a later edit cannot quietly put
+   them back: one control per timing, and explanations in the ⓘ rather than under the field. */
+describe('SpliceNodeInspector simplification', () => {
+  const withSplices = (over: Partial<GraphNode> = {}) =>
+    renderInspector({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], ...over });
+
+  it('has no Division | Time toggles left — each timing is one dropdown', () => {
+    const { queryByLabelText, queryAllByText } = withSplices();
+    for (const gone of ['Splice rate mode', 'Hoop chase mode', 'Drum chase mode', 'Colour chase mode']) {
+      expect(queryByLabelText(gone), gone).toBeNull();
+    }
+    // The toggle's two segment labels were the visible tell of the old four-times pattern.
+    expect(queryAllByText('DIVISION')).toHaveLength(0);
+  });
+
+  it('shows the milliseconds field only for a timing set to Free', () => {
+    // Scoped to each render's own container: both stay mounted for the life of the test.
+    const free = withSplices({ spliceOffsetMode: 'time' });
+    expect(within(free.container).getByLabelText('Hoop chase milliseconds')).toBeTruthy();
+
+    const synced = withSplices({ spliceOffsetMode: 'beats' });
+    expect(within(synced.container).queryByLabelText('Hoop chase milliseconds')).toBeNull();
+  });
+
+  it('prints no help paragraphs once the splices are filled in', () => {
+    // Nine used to sit under the fields, one of them twice — against the rule Field.svelte
+    // records from Trent (2026-08-14): explanations go in the label's ⓘ.
+    const { container } = withSplices();
+    expect(container.querySelectorAll('p.hint')).toHaveLength(0);
+  });
+
+  it('keeps every explanation reachable from the label it explains', () => {
+    const { getByLabelText } = withSplices({ splicePartition: 'hoop' });
+    for (const label of ['Motion', 'On each hit', 'HOOP CHASE', 'MOVE THROUGH MODE', 'COLOUR CHASE', 'DRUM CHASE', 'Layer', 'Play', 'Curve']) {
+      expect(getByLabelText(`About ${label}`), label).toBeTruthy();
+    }
+  });
+
+  it('keeps the one explanation that earns its space: the empty state', () => {
+    const { container } = renderInspector({ splices: [{}, {}] });
+    expect(container.querySelectorAll('p.hint')).toHaveLength(1);
   });
 });

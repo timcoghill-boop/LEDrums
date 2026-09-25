@@ -3,7 +3,7 @@ import { voice } from '@ledrums/core';
 import { makeNode } from '../../trigger-lab/sim';
 import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
 import { DIVISION_OPTS } from './node-options';
-import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_WAIT_MODE_HINTS, SPLICE_WAIT_MODE_OPTS, SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from './splice-options';
+import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_WAIT_MODE_HINTS, SPLICE_WAIT_MODE_OPTS, SPLICE_NO_EFFECT, SPLICE_NO_DIVISION, SPLICE_FREE_MS, describeSpliceRow, spliceTimingOptions, spliceTimingPatch, spliceTimingValue, spliceEffectOptions, spliceRows } from './splice-options';
 
 /* The Splice inspector's row derivation. The rows are what an author actually edits, so the
    thing worth pinning is that they show what will RENDER — including the slots currently
@@ -161,5 +161,41 @@ describe('describeSpliceRow', () => {
 
   it('says muted before anything else — it is why the splice is dark', () => {
     expect(describeSpliceRow(row({ effectId: 'fx', color: '#f00', muted: true }), name)).toBe('muted');
+  });
+});
+
+/* One dropdown per timing replaced a Division | Time toggle plus a value row that changed shape
+   under it. The mapping is the part worth pinning: it must read every show saved under the old
+   two-control form identically, and it must never lose the milliseconds a user typed. */
+describe('merged timing dropdown', () => {
+  const KEYS = { mode: 'spliceOffsetMode', division: 'spliceOffsetDivision' };
+
+  it('offers the divisions, then Free (ms) last', () => {
+    const opts = spliceTimingOptions(DIVISION_OPTS);
+    expect(opts.slice(0, -1)).toEqual(DIVISION_OPTS);
+    expect(opts.at(-1)).toEqual({ value: SPLICE_FREE_MS, label: 'Free (ms)' });
+  });
+
+  it('shows Free for a time-mode pair, whatever division is stored underneath', () => {
+    expect(spliceTimingValue('time', '1/8', '1/4')).toBe(SPLICE_FREE_MS);
+  });
+
+  it('shows the stored division in beats mode, and the fallback when none is stored', () => {
+    expect(spliceTimingValue('beats', '1/16', '1/4')).toBe('1/16');
+    expect(spliceTimingValue(undefined, undefined, SPLICE_NO_DIVISION)).toBe(SPLICE_NO_DIVISION);
+  });
+
+  it('picking Free flips only the mode — the stored division and the typed ms survive', () => {
+    // Round-tripping through Free must not throw away a division the user will come back to.
+    expect(spliceTimingPatch(SPLICE_FREE_MS, KEYS)).toEqual({ spliceOffsetMode: 'time' });
+  });
+
+  it('picking a division returns to beats mode in the same click', () => {
+    expect(spliceTimingPatch('1/8', KEYS)).toEqual({ spliceOffsetMode: 'beats', spliceOffsetDivision: '1/8' });
+  });
+
+  it('None stores undefined, exactly as the division Select it replaced did', () => {
+    // So a show saved before the merge reads back byte-identically.
+    expect(spliceTimingPatch(SPLICE_NO_DIVISION, KEYS)).toEqual({ spliceOffsetMode: 'beats', spliceOffsetDivision: undefined });
   });
 });
