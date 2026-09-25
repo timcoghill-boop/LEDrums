@@ -1,7 +1,7 @@
 <script lang="ts">
   /* Splice-node editor. Three parts, in the order an author thinks about them:
        Cut  — how many splices, over what (hoop / drum / scope), how uneven.
-       Move through — chase (content hops splice to splice) or spin (the cut itself rotates), at a
+       Move around — chase (content hops splice to splice) or spin (the cut itself rotates), at a
               musical division or free milliseconds.
        Splices — one row each: a colour, an effect, or both (the colour then tints the
               effect), or neither (the splice is blank and you see through it).
@@ -245,7 +245,7 @@
     {/snippet}
 
     <section class="group">
-      <h4 class="grouptitle">MOVE THROUGH</h4>
+      <h4 class="grouptitle">MOVE AROUND</h4>
 
       <Field label="Motion" info={SPLICE_CHASE_HINTS[chase]}>
         <SegmentedControl

@@ -51,7 +51,10 @@ describe('SpliceNodeInspector movement language', () => {
   it('uses the movement headings and accessible chase names for a hoop partition', () => {
     const { container, getByLabelText, getAllByText } = renderInspector();
 
-    expect(getAllByText('MOVE THROUGH')).toHaveLength(2);
+    // The section is MOVE AROUND and its direction control is MOVE THROUGH — Tim's call
+    // (2026-09-25), replacing the earlier heading-and-control double of MOVE THROUGH.
+    expect(getAllByText('MOVE AROUND')).toHaveLength(1);
+    expect(getAllByText('MOVE THROUGH')).toHaveLength(1);
     expect(container.textContent).toContain('MOVE THROUGH MODE');
     expect(container.textContent).toContain('HOOP CHASE');
     expect(container.textContent).toContain('DRUM CHASE');
