@@ -173,7 +173,15 @@ export interface SliceLayout {
   drumCount: number;
   /** Drum ids in model order, indexed by {@link drumOrdinal} — what a dragged drum sequence ranks. */
   drumIds: string[];
+  /** THROUGH KIT's dragged drum order as a rank per drum ordinal, or null to follow the pattern. */
+  drumRank: number[] | null;
   bands: SliceBand[];
+  /** Per-drum motion scratch, reused every frame: the walk runs per voice per frame, so it
+      allocates nothing. `drumReady` is cleared at the start of each walk. */
+  phaseByDrum: Float64Array;
+  stepByDrum: Int32Array;
+  delayByDrum: Float64Array;
+  drumReady: Uint8Array;
 }
 
 /** Identity of a slice layout: everything {@link buildSliceLayout} reads, and nothing that moves. */
@@ -185,6 +193,7 @@ export function sliceLayoutKey(cfg: SpliceConfig, model: PixelModel, ranges: rea
     const { min, max } = s.region;
     key += `|${min.x},${min.y},${min.z},${max.x},${max.y},${max.z}`;
   }
+  if (cfg.drumSequence) key += `|d:${cfg.drumSequence.join(',')}`;
   for (const range of ranges) key += `|${range.start}-${range.end}`;
   return key;
 }
@@ -247,13 +256,20 @@ export function buildSliceLayout(model: PixelModel, ranges: readonly PixelRange[
   const cut = computeSpliceBands(BAND_RESOLUTION, cfg.count, cfg.jitter, cfg.seed);
   const bands = cut.map((b) => ({ start: b.start / BAND_RESOLUTION, end: (b.start + b.width) / BAND_RESOLUTION }));
 
+  const drumCount = Math.max(1, model.drums.length);
+  const drumIds = Array.from(drumOrdinal.keys());
   return {
     ids: Int32Array.from(ids),
     t,
     drumOrdinal: Int16Array.from(ordinals),
-    drumCount: Math.max(1, model.drums.length),
-    drumIds: Array.from(drumOrdinal.keys()),
+    drumCount,
+    drumIds,
+    drumRank: cfg.drumSequence ? sequenceRanks(drumIds, cfg.drumSequence) : null,
     bands,
+    phaseByDrum: new Float64Array(drumCount),
+    stepByDrum: new Int32Array(drumCount),
+    delayByDrum: new Float64Array(drumCount),
+    drumReady: new Uint8Array(drumCount),
   };
 }
 
@@ -329,12 +345,8 @@ export function forEachSliceContribution(
 
   // Per-drum motion is computed lazily and cached per frame: DRUM CHASE delays each drum's clock,
   // so every pixel of one drum shares a phase and a step offset.
-  const phaseByDrum = new Float64Array(layout.drumCount);
-  const stepByDrum = new Int32Array(layout.drumCount);
-  const delayByDrum = new Float64Array(layout.drumCount);
-  const ready = new Uint8Array(layout.drumCount);
-  // THROUGH KIT's dragged drum order, when there is one — the same ranking a splice uses.
-  const drumRank = cfg.drumSequence ? sequenceRanks(layout.drumIds, cfg.drumSequence) : null;
+  const { phaseByDrum, stepByDrum, delayByDrum, drumReady: ready, drumRank } = layout;
+  ready.fill(0);
 
   const levelFor = (reveal: number): number => {
     if (cfg.waitMode !== 'lit' && reveal > 0 && clocks.ageMs < reveal) return 0;

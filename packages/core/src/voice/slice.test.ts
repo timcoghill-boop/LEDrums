@@ -298,4 +298,21 @@ describe('MOVE THROUGH MODE and the chases', () => {
     };
     expect(run()).toEqual(run());
   });
+
+  it('a layout reused across frames walks exactly as a fresh one — its per-drum scratch resets', () => {
+    // The compositor caches one layout per config and walks it every frame, so the per-drum motion
+    // scratch it carries must not leak one frame's phases into the next.
+    const m = model();
+    const cfg = config({ spliceChase: 'smooth', spliceRateMode: 'time', spliceRateMs: 700, spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 150 });
+    const walk = (layout: ReturnType<typeof buildSliceLayout>, atMs: number) => {
+      const out: number[] = [];
+      forEachSliceContribution(layout, cfg, { ageMs: atMs, motionMs: atMs, pulseCycleMs: 0 }, 1, (id, slot, w) => {
+        out.push(id, slot, w);
+      });
+      return out;
+    };
+    const reused = buildSliceLayout(m, allPixels(m), cfg);
+    walk(reused, 900);
+    expect(walk(reused, 333)).toEqual(walk(buildSliceLayout(m, allPixels(m), cfg), 333));
+  });
 });
