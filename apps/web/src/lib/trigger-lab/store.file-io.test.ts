@@ -118,7 +118,7 @@ describe('Load file into graph', () => {
   it('replaces the contents but keeps the key, the name and the pad it fires from', async () => {
     const store = new TriggerLab(fakeClient);
     const { a, b } = twoGraphs(store);
-    store.selectGraphInSection(store.activeSectionId, a);
+    store.selectGraphInSection(store.activeSectionId!, a);
     store.addNode('splice', 200, 0);
     await store.saveGraphToFile(a);
     const [, text] = lastSaved();
@@ -137,7 +137,7 @@ describe('Load file into graph', () => {
   it('is one undo step', async () => {
     const store = new TriggerLab(fakeClient);
     const { a, b } = twoGraphs(store);
-    store.selectGraphInSection(store.activeSectionId, a);
+    store.selectGraphInSection(store.activeSectionId!, a);
     store.addNode('splice', 200, 0);
     await store.saveGraphToFile(a);
     const before = JSON.stringify(store.graphs[b]);
@@ -153,7 +153,7 @@ describe('Load file into graph', () => {
     const { a } = twoGraphs(store);
     await store.saveGraphToFile(a);
     const fileSource = structuredClone(store.graphs[a]!.nodes.find((node) => node.kind === 'trigger')!.source);
-    const blank = store.createGraphInSection(store.activeSectionId, 'Blank')!;
+    const blank = store.createGraphInSection(store.activeSectionId!, 'Blank')!;
 
     store.applyGraphFileTo(blank, lastSaved()[1]);
     expect(store.graphs[blank]!.nodes.find((node) => node.kind === 'trigger')!.source).toEqual(fileSource);
@@ -177,7 +177,7 @@ describe('Load file into graph', () => {
   it('loads through the file panel and toasts; a cancelled panel changes nothing', async () => {
     const store = new TriggerLab(fakeClient);
     const { a, b } = twoGraphs(store);
-    store.selectGraphInSection(store.activeSectionId, a);
+    store.selectGraphInSection(store.activeSectionId!, a);
     store.addNode('splice', 200, 0);
     await store.saveGraphToFile(a);
     const before = JSON.stringify(store.graphs[b]);
@@ -198,7 +198,7 @@ describe('Load graph from file into a section', () => {
     const { a } = twoGraphs(store);
     store.renameGraph(a, 'Saved look');
     await store.saveGraphToFile(a);
-    const sectionId = store.activeSectionId;
+    const sectionId = store.activeSectionId!;
     const placed = [...store.activeSection!.graphs];
 
     const result = store.applyGraphFileToSection(sectionId, lastSaved()[1], 'ignored.ledrums-graph.json');
@@ -222,7 +222,7 @@ describe('Load graph from file into a section', () => {
     const doc = JSON.parse(lastSaved()[1]);
     delete doc.payload.name;
 
-    const result = store.applyGraphFileToSection(store.activeSectionId, JSON.stringify(doc), 'Bridge.ledrums-graph.json');
+    const result = store.applyGraphFileToSection(store.activeSectionId!, JSON.stringify(doc), 'Bridge.ledrums-graph.json');
     expect(result.ok && store.graphLabel(result.graphKey!)).toBe('Bridge');
   });
 });
