@@ -4093,6 +4093,11 @@ export class TriggerLab {
       node.randomDistribution = 'linear';
       node.randomSteps = 4;
       if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'slice' && node.scope === 'hoop') {
+      // Slice's On control offers Kit / Drum / Space only, and would read a kept hoop scope as Kit
+      // while it still cut one hoop — with no click able to fix it.
+      node.scope = 'kit';
+      node.targetId = undefined;
     }
   }
 

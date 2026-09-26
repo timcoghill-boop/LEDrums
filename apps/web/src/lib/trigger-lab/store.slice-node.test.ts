@@ -57,6 +57,19 @@ describe('addNode("slice")', () => {
   });
 });
 
+describe('changeKind to slice', () => {
+  it('drops a hoop scope the Slice inspector cannot show or change', () => {
+    const store = new TriggerLab(fakeClient);
+    store.createGraph('test');
+    const node = store.addNode('splice', 200, 0)!;
+    store.setScope(node, 'hoop');
+    store.setTargetId(node, 'kick#0');
+    store.changeKind(node, 'slice');
+    expect(node.scope).toBe('kit');
+    expect(node.targetId).toBeUndefined();
+  });
+});
+
 describe('every shared action lands on a slice (the kind-guard trap)', () => {
   it('setSpliceSetting — including the slice-only fields', () => {
     const { store, node } = withSlice();
