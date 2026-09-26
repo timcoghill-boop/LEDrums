@@ -29,6 +29,7 @@
 
   const KIND_LABEL: Record<ClipDocKind, string> = {
     graph: 'a trigger graph',
+    node: 'a node',
     section: 'a section',
     song: 'a song',
     patch: 'a patch',

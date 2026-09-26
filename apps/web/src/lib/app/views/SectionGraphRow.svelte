@@ -17,6 +17,8 @@
   import X from '@lucide/svelte/icons/x';
   import Link2 from '@lucide/svelte/icons/link-2';
   import Unlink2 from '@lucide/svelte/icons/unlink-2';
+  import Save from '@lucide/svelte/icons/save';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
 
   let {
     store,
@@ -71,8 +73,13 @@
     store.removeGraphFromSection(section.id, graphKey);
   }
 
+  // Load replaces the graph's CONTENTS, so it follows the graph's own edit right (a local graph
+  // placed in a library song is still editable), not the placement's.
+  const canLoad = $derived(store.canMutateGraph(graphKey));
   const actions = $derived<ContextMenuAction[]>([
     { label: canArrange ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => store.copyGraphToSection(section.id, graphKey) },
+    { label: 'Save graph to file…', icon: Save, onSelect: () => void store.saveGraphToFile(graphKey) },
+    { label: canLoad ? 'Load file into graph…' : `Load — ${blockedReason}`, icon: FolderOpen, disabled: !canLoad, onSelect: () => void store.loadGraphFromFile(graphKey) },
     ...(localPlacement ? [{ label: store.canEdit ? 'Link to placement…' : 'Link — Another client is editing', icon: Link2, disabled: !store.canEdit, onSelect: () => onLink(song.id, section.id, graphKey) }] : []),
     ...(localPlacement && reused ? [{ label: canArrange ? 'Make independent' : `Make independent — ${blockedReason}`, icon: Unlink2, disabled: !canArrange, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
     { label: canArrange ? 'Remove from section' : `Remove from section — ${blockedReason}`, icon: X, disabled: !canArrange, onSelect: removeFromSection },

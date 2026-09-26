@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app",
-  "description": "Main app window. Starts on the bundled loading shell, then navigates to the local server. Grants minimal IPC for manual updater checks.",
+  "description": "Main app window. Starts on the bundled loading shell, then navigates to the local server. Grants minimal IPC for manual updater checks and the Save / Load file panels.",
   "windows": ["app"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]
@@ -11,6 +11,8 @@
     "clipboard-manager:allow-write-text",
     "allow-get-boot-status",
     "allow-check-for-update-now",
-    "allow-install-update-now"
+    "allow-install-update-now",
+    "allow-save-text-file",
+    "allow-open-text-file"
   ]
 }
