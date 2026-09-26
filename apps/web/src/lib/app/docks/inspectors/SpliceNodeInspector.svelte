@@ -1,10 +1,12 @@
 <script lang="ts">
-  /* Splice-node editor. Three parts, in the order an author thinks about them:
-       Cut  — how many splices, over what (hoop / drum / scope), how uneven.
-       Move through — chase (content hops splice to splice) or spin (the cut itself rotates), at a
-              musical division or free milliseconds.
-       Splices — one row each: a colour, an effect, or both (the colour then tints the
-              effect), or neither (the splice is blank and you see through it).
+  /* Splice-node editor, in the order an author thinks about it (Tim's layout, 2026-09-26):
+       Splice       — the initial properties: how many splices, over what (hoop / drum / scope), where
+                      the cut sits, how uneven, how soft.
+       MOVE AROUND  — how the light acts WITHIN that area: chase, spin or stagger, at a rate, which way.
+       MOVE THROUGH — where the light is SENT, if anywhere: through the kit drum to drum, through each
+                      drum hoop to hoop, around each hoop splice to splice — any mix, each in an order
+                      you drag or pick — and whether waiting parts are lit, dark, fading or pulsing.
+       Brightness envelope and the rows follow, shared with the Slice inspector.
      The shared node header (kind selector + remove) lives in the parent Inspector. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode } from '../../../trigger-lab/sim';
@@ -14,64 +16,58 @@
   import Select from '../../../ui/Select.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
-  import ColorField from '../../../ui/ColorField.svelte';
-  import IconButton from '../../../ui/IconButton.svelte';
-  import EasePicker from '../../../ui/EasePicker.svelte';
-  import Toggle from '../../../ui/Toggle.svelte';
-  import Plus from '@lucide/svelte/icons/plus';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import SpliceTiming from './SpliceTiming.svelte';
+  import SpliceEnvelopeFields from './SpliceEnvelopeFields.svelte';
+  import SpliceRows from './SpliceRows.svelte';
+  import SpliceThroughLayer from './SpliceThroughLayer.svelte';
   import { DIVISION_OPTS } from '../../views/node-options';
   import {
     SPLICE_CHASE_HINTS,
     SPLICE_CHASE_OPTS,
     SPLICE_MOTION_MODE_HINTS,
     SPLICE_MOTION_MODE_OPTS,
-    SPLICE_LOOP_RETRIGGER_HINTS,
-    SPLICE_LOOP_RETRIGGER_OPTS,
-    SPLICE_OFFSET_MODE_OPTS,
-    SPLICE_PLAY_OPTS,
     SPLICE_WAIT_MODE_HINTS,
     SPLICE_WAIT_MODE_OPTS,
-    SPLICE_NO_DIVISION,
-    SPLICE_ORDER_OPTS,
+    SPLICE_RATE_KEYS,
+    AROUND_LAYER,
+    THROUGH_DRUM_LAYER,
+    aroundLabel,
+    throughKitLayer,
     SPLICE_DIRECTION_OPTS,
-    SPLICE_NO_EFFECT,
     SPLICE_PARTITION_OPTS,
-    SPLICE_RATE_MODE_OPTS,
-    describeSpliceRow,
-    spliceEffectOptions,
-    spliceLayerOptions,
-    spliceOffsetDivisionOptions,
-    spliceRows,
-    spliceUnitNoun,
   } from '../../views/splice-options';
   import { SCOPE_OPTS } from '../../views/node-options';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
-  const rows = $derived(spliceRows(node));
-  const effectOpts = $derived(spliceEffectOptions(store.effects));
   const chase = $derived(node.spliceChase ?? 'off');
-  const rateMode = $derived(node.spliceRateMode ?? 'beats');
   const jitter = $derived(node.spliceJitter ?? 0);
-  const tint = $derived(node.spliceTint ?? 1);
-  const anyTinted = $derived(rows.some((r) => r.color && r.effectId && !r.muted));
-  const effectName = (id: string) => store.effects.find((e) => e.id === id)?.name ?? id;
   const partition = $derived(node.splicePartition ?? 'hoop');
-  const offsetMode = $derived(node.spliceOffsetMode ?? 'beats');
-  // The cascade offsets ACROSS units, so it means nothing when the whole scope is one unit.
-  const canCascade = $derived(partition !== 'scope');
-  const drumOffsetMode = $derived(node.spliceDrumOffsetMode ?? 'beats');
   const waitMode = $derived(node.spliceWaitMode ?? 'lit');
-  const colorOffsetMode = $derived(node.spliceColorOffsetMode ?? 'beats');
-  const loopRetrigger = $derived(node.spliceLoopRetrigger ?? 'stop');
-  // The drum axis is only separate from the primary one when cutting per HOOP — cutting per
-  // drum already cascades drum by drum, and per scope there is a single unit.
-  const canCascadeDrums = $derived(partition === 'hoop' && node.scope !== 'drum' && node.scope !== 'hoop');
-  const unitNoun = $derived(spliceUnitNoun(partition));
   const motionMode = $derived(node.spliceMotionMode ?? 'restart');
-  const layerOptions = $derived(spliceLayerOptions(store.buses));
-  const layerIsMono = $derived(store.buses.find((b) => b.id === store.busOf(node))?.polyphony === 'mono');
+
+  // Which layers can send light anywhere, given what the splice covers and how it is cut. Through
+  // the kit needs more than one drum and a cut that has drums as units; through a drum needs hoops.
+  const showThroughKit = $derived(node.scope === 'kit' && partition !== 'scope');
+  const showThroughDrum = $derived(partition === 'hoop' && node.scope !== 'hoop');
+  const kitLayer = $derived(throughKitLayer(partition));
+
+  // Explanations live in each label's ⓘ, never as a paragraph under the field (Field.svelte).
+  const THROUGH_KIT_INFO =
+    'Sends the light from drum to drum across the kit, one step apart, in the order below. With THROUGH DRUM as well, it spirals.';
+  const THROUGH_DRUM_INFO = 'Sends the light from hoop to hoop up each drum, one step apart, in the order below.';
+  const AROUND_INFO = 'Brings each splice on after the one before it, one step apart, in the order below.';
+
+  type OrderItem = { id: string; label: string };
+  const drumItems = $derived(store.kitDrumInfos.map((d) => ({ id: d.id, label: d.label })));
+  // Hoops are numbered within their drum. On a drum-scoped splice the list is that drum's hoops;
+  // across the kit it covers the most hoops any drum has, since drums may differ.
+  const hoopItems = $derived.by((): OrderItem[] => {
+    const infos = store.kitDrumInfos;
+    const target = node.scope === 'drum' ? infos.find((d) => d.id === node.targetId) : undefined;
+    const count = target ? target.hoopCount : Math.max(1, ...infos.map((d) => d.hoopCount));
+    return Array.from({ length: count }, (_, i) => ({ id: String(i + 1), label: `Hoop ${i + 1}` }));
+  });
 
   /** Scope-target options, derived from the current scope — same shape the play inspector uses. */
   const targetOptions = $derived.by(() => {
@@ -89,7 +85,7 @@
 {#if node.kind === 'splice'}
   <div class="kindbody">
     <section class="group">
-      <h4 class="grouptitle">Cut</h4>
+      <h4 class="grouptitle">Splice</h4>
 
       <Field label="On">
         <SegmentedControl
@@ -185,10 +181,11 @@
       {/if}
     </section>
 
-    <section class="group">
-      <h4 class="grouptitle">MOVE THROUGH</h4>
 
-      <Field label="Motion">
+    <section class="group">
+      <h4 class="grouptitle">MOVE AROUND</h4>
+
+      <Field label="Motion" info={SPLICE_CHASE_HINTS[chase]}>
         <SegmentedControl
           value={chase}
           options={SPLICE_CHASE_OPTS}
@@ -197,11 +194,8 @@
         />
       </Field>
 
-      <!-- Motion-only controls. The CASCADE block below is deliberately outside this gate:
-           an offset used to need motion to mean anything, but a dark/pulse wait makes the
-           offset itself the thing that travels, with no chase running at all. -->
       {#if chase !== 'off'}
-        <Field label="On each hit">
+        <Field label="On each hit" info={SPLICE_MOTION_MODE_HINTS[motionMode]}>
           <SegmentedControl
             value={motionMode}
             options={SPLICE_MOTION_MODE_OPTS}
@@ -209,39 +203,8 @@
             ariaLabel="Splice motion mode"
           />
         </Field>
-        <p class="hint">{SPLICE_MOTION_MODE_HINTS[motionMode]}</p>
 
-        <Field label="Rate">
-          <SegmentedControl
-            value={rateMode}
-            options={SPLICE_RATE_MODE_OPTS}
-            onChange={(v) => store.setSpliceSetting(node, { spliceRateMode: v as 'beats' | 'time' })}
-            ariaLabel="Splice rate mode"
-          />
-        </Field>
-
-        {#if rateMode === 'beats'}
-          <Field layout="row" label="Division">
-            <Select
-              value={node.spliceDivision ?? voice.DEFAULT_SPLICE_DIVISION}
-              options={DIVISION_OPTS}
-              onChange={(v) => store.setSpliceSetting(node, { spliceDivision: v })}
-              ariaLabel="Splice division"
-            />
-          </Field>
-        {:else}
-          <Field layout="row" label="Time" unit="ms">
-            <CommitInput
-              type="number"
-              value={node.spliceRateMs ?? voice.DEFAULT_SPLICE_RATE_MS}
-              min={10}
-              max={60000}
-              step={1}
-              onCommit={(v) => store.setSpliceSetting(node, { spliceRateMs: Number(v) })}
-              ariaLabel="Splice rate milliseconds"
-            />
-          </Field>
-        {/if}
+        <SpliceTiming {store} {node} label="Rate" aria="Splice rate" keys={SPLICE_RATE_KEYS} options={DIVISION_OPTS} fallback={voice.DEFAULT_SPLICE_DIVISION} msDefault={voice.DEFAULT_SPLICE_RATE_MS} msMin={10} />
 
         {#if chase === 'stagger'}
           <Field layout="row" label="Increment" unit="px">
@@ -257,352 +220,48 @@
           </Field>
         {/if}
 
-        <Field label="MOVE THROUGH">
+        <Field label="Direction">
           <SegmentedControl
             value={String(node.spliceDirection ?? 1)}
             options={SPLICE_DIRECTION_OPTS}
             onChange={(v) => store.setSpliceSetting(node, { spliceDirection: v === '-1' ? -1 : 1 })}
-            ariaLabel="Splice move through"
+            ariaLabel="Splice direction"
           />
         </Field>
-
-        <p class="hint">{SPLICE_CHASE_HINTS[chase]}</p>
       {/if}
+    </section>
 
-        {#if canCascade}
-          <Field layout="row" label="{unitNoun.toUpperCase()} CHASE">
-            <SegmentedControl
-              value={offsetMode}
-              options={SPLICE_OFFSET_MODE_OPTS}
-              onChange={(v) => store.setSpliceSetting(node, { spliceOffsetMode: v as 'beats' | 'time' })}
-              ariaLabel="{unitNoun} chase mode"
-            />
-          </Field>
+    <section class="group">
+      <h4 class="grouptitle">MOVE THROUGH</h4>
 
-          {#if offsetMode === 'beats'}
-            <Field layout="row" label="Division">
-              <Select
-                value={node.spliceOffsetDivision ?? SPLICE_NO_DIVISION}
-                options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
-                onChange={(v) => store.setSpliceSetting(node, { spliceOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
-                ariaLabel="{unitNoun} chase division"
-              />
-            </Field>
-          {:else}
-            <Field layout="row" label="Time" unit="ms">
-              <CommitInput
-                type="number"
-                value={node.spliceOffsetMs ?? 0}
-                min={0}
-                max={60000}
-                step={1}
-                onCommit={(v) => store.setSpliceSetting(node, { spliceOffsetMs: Number(v) })}
-                ariaLabel="{unitNoun} chase milliseconds"
-              />
-            </Field>
-          {/if}
+      <Field label="Mode" info={SPLICE_WAIT_MODE_HINTS[waitMode]}>
+        <SegmentedControl
+          value={waitMode}
+          options={SPLICE_WAIT_MODE_OPTS}
+          onChange={(v) => store.setSpliceSetting(node, { spliceWaitMode: v as voice.SpliceWaitMode })}
+          ariaLabel="Splice move through mode"
+        />
+      </Field>
 
-          <!-- A Select, not a 4-up SegmentedControl: "Outside in" overflows the panel's control
-               column by 15px, and the set is likely to grow. `segment={false}` is what keeps
-               that true now the ≤4 rule lives inside Select itself (F3 item 10) — the opt-out
-               its own header describes for a label that clips where a trigger ellipsises. -->
-          <Field layout="row" label="{unitNoun} order">
-            <Select
-              value={node.spliceOrder ?? 'up'}
-              options={SPLICE_ORDER_OPTS}
-              segment={false}
-              onChange={(v) => store.setSpliceSetting(node, { spliceOrder: v as voice.SpliceOrder })}
-              ariaLabel="{unitNoun} order"
-            />
-          </Field>
-        {/if}
-
-        {#if canCascade}
-          <Field label="MOVE THROUGH MODE">
-            <SegmentedControl
-              value={waitMode}
-              options={SPLICE_WAIT_MODE_OPTS}
-              onChange={(v) => store.setSpliceSetting(node, { spliceWaitMode: v as voice.SpliceWaitMode })}
-              ariaLabel="Splice move through mode"
-            />
-          </Field>
-          <p class="hint">{SPLICE_WAIT_MODE_HINTS[waitMode]}</p>
-        {/if}
-
-        {#if waitMode !== 'lit'}
-          <Field layout="row" label="COLOUR CHASE">
-            <SegmentedControl
-              value={colorOffsetMode}
-              options={SPLICE_OFFSET_MODE_OPTS}
-              onChange={(v) => store.setSpliceSetting(node, { spliceColorOffsetMode: v as 'beats' | 'time' })}
-              ariaLabel="Colour chase mode"
-            />
-          </Field>
-
-          {#if colorOffsetMode === 'beats'}
-            <Field layout="row" label="Division">
-              <Select
-                value={node.spliceColorOffsetDivision ?? SPLICE_NO_DIVISION}
-                options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
-                onChange={(v) => store.setSpliceSetting(node, { spliceColorOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
-                ariaLabel="Colour chase division"
-              />
-            </Field>
-          {:else}
-            <Field layout="row" label="Time" unit="ms">
-              <CommitInput
-                type="number"
-                value={node.spliceColorOffsetMs ?? 0}
-                min={0}
-                max={60000}
-                step={1}
-                onCommit={(v) => store.setSpliceSetting(node, { spliceColorOffsetMs: Number(v) })}
-                ariaLabel="Colour chase milliseconds"
-              />
-            </Field>
-          {/if}
-
-          <Field layout="row" label="Colour order">
-            <Select
-              value={node.spliceColorOrder ?? 'up'}
-              options={SPLICE_ORDER_OPTS}
-              segment={false}
-              onChange={(v) => store.setSpliceSetting(node, { spliceColorOrder: v as voice.SpliceOrder })}
-              ariaLabel="Colour order"
-            />
-          </Field>
-
-          <p class="hint">
-            Brings the colours on one after another instead of all together, in the order above. With
-            Pulse each one fades in and out on its own.
-          </p>
-        {/if}
-
-        {#if canCascadeDrums}
-          <Field layout="row" label="DRUM CHASE">
-            <SegmentedControl
-              value={drumOffsetMode}
-              options={SPLICE_OFFSET_MODE_OPTS}
-              onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetMode: v as 'beats' | 'time' })}
-              ariaLabel="Drum chase mode"
-            />
-          </Field>
-
-          {#if drumOffsetMode === 'beats'}
-            <Field layout="row" label="Division">
-              <Select
-                value={node.spliceDrumOffsetDivision ?? SPLICE_NO_DIVISION}
-                options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
-                onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
-                ariaLabel="Drum chase division"
-              />
-            </Field>
-          {:else}
-            <Field layout="row" label="Time" unit="ms">
-              <CommitInput
-                type="number"
-                value={node.spliceDrumOffsetMs ?? 0}
-                min={0}
-                max={60000}
-                step={1}
-                onCommit={(v) => store.setSpliceSetting(node, { spliceDrumOffsetMs: Number(v) })}
-                ariaLabel="Drum chase milliseconds"
-              />
-            </Field>
-          {/if}
-
-          <Field layout="row" label="Drum order">
-            <Select
-              value={node.spliceDrumOrder ?? 'up'}
-              options={SPLICE_ORDER_OPTS}
-              segment={false}
-              onChange={(v) => store.setSpliceSetting(node, { spliceDrumOrder: v as voice.SpliceOrder })}
-              ariaLabel="Drum order"
-            />
-          </Field>
-
-          <p class="hint">
-            A drum chase sends the movement round the kit one drum after another, on top of how it
-            travels up each drum. Set both and it spirals; set only this one and whole drums light in turn.
-          </p>
-        {/if}
-
-        <p class="hint">{SPLICE_CHASE_HINTS[chase]}</p>
-        {#if canCascade}
-          <p class="hint">
-            A chase starts each {unitNoun.toLowerCase()} later than the one before it, in the order above —
-            so the motion travels {partition === 'drum' ? 'across the kit' : 'up the drum'} instead of every
-            {unitNoun.toLowerCase()} moving together.
-          </p>
-        {/if}
+      {#if showThroughKit}
+        <SpliceThroughLayer {store} {node} label="THROUGH KIT" info={THROUGH_KIT_INFO} aria="Through kit" layer={kitLayer} items={drumItems} />
+      {/if}
+      {#if showThroughDrum}
+        <SpliceThroughLayer {store} {node} label="THROUGH DRUM" info={THROUGH_DRUM_INFO} aria="Through drum" layer={THROUGH_DRUM_LAYER} items={hoopItems} />
+      {/if}
+      <!-- Round-the-hoop arrival is a REVEAL: with Lit every splice is already on, so there is
+           nothing for it to do until the mode hides the parts that are waiting. -->
+      {#if waitMode !== 'lit'}
+        <SpliceThroughLayer {store} {node} label={aroundLabel(partition)} info={AROUND_INFO} aria="Around" layer={AROUND_LAYER} />
+      {/if}
     </section>
 
     <section class="group">
       <h4 class="grouptitle">Brightness envelope</h4>
-
-      <!-- Layer names are the show author's, not the app's, and each carries a "· cuts" /
-           "· sustains" suffix — exactly the case Select's header excludes from segmenting. -->
-      <Field layout="row" label="Layer">
-        <Select
-          value={store.busOf(node)}
-          options={layerOptions}
-          segment={false}
-          onChange={(v) => store.setBus(node, v)}
-          ariaLabel="Splice layer"
-        />
-      </Field>
-
-      <Field layout="row" label="Play">
-        <SegmentedControl
-          value={node.mode === 'oneshot' ? 'oneshot' : 'loop'}
-          options={SPLICE_PLAY_OPTS}
-          onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop')}
-          ariaLabel="Splice play mode"
-        />
-      </Field>
-
-      {#if node.mode !== 'oneshot'}
-        <Field layout="row" label="Hit again">
-          <SegmentedControl
-            value={loopRetrigger}
-            options={SPLICE_LOOP_RETRIGGER_OPTS}
-            onChange={(v) => store.setSpliceSetting(node, { spliceLoopRetrigger: v as 'stop' | 'restart' })}
-            ariaLabel="Splice loop retrigger"
-          />
-        </Field>
-        <p class="hint">{SPLICE_LOOP_RETRIGGER_HINTS[loopRetrigger]}</p>
-      {/if}
-
-      <Field layout="row" label="Attack" unit="ms">
-        <CommitInput
-          type="number"
-          value={node.spliceAttackMs ?? voice.DEFAULT_SPLICE_ATTACK_MS}
-          min={0}
-          max={voice.MAX_SPLICE_ENVELOPE_MS}
-          step={1}
-          onCommit={(v) => store.setSpliceSetting(node, { spliceAttackMs: Number(v) })}
-          ariaLabel="Splice attack milliseconds"
-        />
-      </Field>
-
-      <!-- Stacked: EasePicker is a family Select PLUS a direction control, which the row
-           layout's control column squeezes to the point of clipping. -->
-      <Field label="Curve">
-        <EasePicker
-          value={node.spliceAttackEase ?? { fn: 'linear', dir: 'in' }}
-          onChange={(v) => store.setSpliceSetting(node, { spliceAttackEase: v })}
-          ariaLabel="Splice attack curve"
-        />
-      </Field>
-
-      <Field layout="row" label="Sustain" unit="ms">
-        <CommitInput
-          type="number"
-          value={node.spliceHoldMs ?? voice.DEFAULT_SPLICE_HOLD_MS}
-          min={0}
-          max={voice.MAX_SPLICE_ENVELOPE_MS}
-          step={10}
-          onCommit={(v) => store.setSpliceSetting(node, { spliceHoldMs: Number(v) })}
-          ariaLabel="Splice sustain milliseconds"
-        />
-      </Field>
-
-      <Field layout="row" label="Decay" unit="ms">
-        <CommitInput
-          type="number"
-          value={node.spliceReleaseMs ?? voice.DEFAULT_SPLICE_RELEASE_MS}
-          min={0}
-          max={voice.MAX_SPLICE_ENVELOPE_MS}
-          step={10}
-          onCommit={(v) => store.setSpliceSetting(node, { spliceReleaseMs: Number(v) })}
-          ariaLabel="Splice decay milliseconds"
-        />
-      </Field>
-
-      <p class="hint">
-        How long the lights stay up after a hit: attack up, sustain at full, then decay away. A
-        One-shot runs the whole shape; Loop stays up until the voice is stopped. A linear
-        attack reads as brightening too fast — an ease-in curve swells more evenly.
-      </p>
-      <p class="hint">
-        {layerIsMono
-          ? 'This layer is mono, so a new hit CUTS whatever it was already playing — including another splice node fired by the same sequencer. Move to a “sustains” layer to let them overlap and fade out on their own.'
-          : 'This layer is poly, so hits SUSTAIN: an earlier splice keeps fading on its own envelope while the next one starts. Move to a “cuts” layer to have each new hit end the last.'}
-      </p>
+      <SpliceEnvelopeFields {store} {node} />
     </section>
 
-    <section class="group">
-      <div class="grouphead">
-        <h4 class="grouptitle">Splices</h4>
-        <IconButton
-          icon={Plus}
-          label="Add splice"
-          variant="soft"
-          size={14}
-          onclick={() => store.addSplice(node)}
-        />
-      </div>
-
-      <ul class="rows">
-        {#each rows as row (row.index)}
-          <li class="row" class:blank={row.blank}>
-            <div class="rowhead">
-              <span class="idx">{row.index + 1}</span>
-              <span class="rowdesc">{describeSpliceRow(row, effectName)}</span>
-              <span class="rowactions">
-                <Toggle
-                  pressed={!row.muted}
-                  onChange={(on) => store.setSpliceAt(node, row.index, { muted: !on })}
-                  ariaLabel="Splice {row.index + 1} on"
-                />
-                <IconButton
-                  icon={Trash2}
-                  label="Remove splice {row.index + 1}"
-                  variant="soft"
-                  size={13}
-                  disabled={rows.length <= 1}
-                  onclick={() => store.removeSplice(node, row.index)}
-                />
-              </span>
-            </div>
-
-            <div class="rowbody">
-              <ColorField
-                value={row.color}
-                onChange={(v) => store.setSpliceAt(node, row.index, { color: v })}
-                ariaLabel="Splice {row.index + 1} colour"
-              />
-              <!-- Effect names come from the show, so a three-effect show must not turn this
-                   into three segments of ellipsised text — stay a dropdown at every length. -->
-              <Select
-                value={row.effectId ?? SPLICE_NO_EFFECT}
-                options={effectOpts}
-                segment={false}
-                onChange={(v) => store.setSpliceAt(node, row.index, { effectId: v === SPLICE_NO_EFFECT ? undefined : v })}
-                ariaLabel="Splice {row.index + 1} effect"
-              />
-            </div>
-          </li>
-        {/each}
-      </ul>
-
-      {#if anyTinted}
-        <Field layout="row" label="Tint">
-          <Slider
-            value={tint}
-            min={0}
-            max={1}
-            step={0.01}
-            onChange={(v) => store.setSpliceSetting(node, { spliceTint: v })}
-            format={(v) => `${Math.round(v * 100)}%`}
-            ariaLabel="Splice tint amount"
-          />
-        </Field>
-        <p class="hint">How strongly a splice's colour recolours the effect inside it. A splice with no colour is never tinted.</p>
-      {:else}
-        <p class="hint">Give a splice a colour, an effect, or both — with both, the colour tints the effect. With neither, it stays blank.</p>
-      {/if}
-    </section>
+    <SpliceRows {store} {node} />
   </div>
 {/if}
 
@@ -618,12 +277,6 @@
     flex-direction: column;
     gap: var(--space-2);
   }
-  .grouphead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
   .grouptitle {
     margin: 0;
     font-size: var(--text-2xs);
@@ -631,70 +284,5 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-muted);
-  }
-  .hint {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    line-height: var(--leading-normal);
-  }
-
-  .rows {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .row {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-2);
-    border-radius: var(--radius-2);
-    background: var(--surface-raised);
-    box-shadow: inset 0 0 0 1px var(--border-faint);
-  }
-  /* A blank splice renders nothing on the kit — say so quietly rather than hiding the row. */
-  .row.blank .rowdesc {
-    opacity: 0.6;
-    font-style: italic;
-  }
-  .rowhead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .idx {
-    flex: none;
-    min-width: 1.4em;
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .rowdesc {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .rowactions {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-  }
-  /* One control per line: at the inspector's real width a colour well + a full effect
-     name side by side truncates both (the hex reads "#F…" and the effect name wraps). */
-  .rowbody {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    min-width: 0;
   }
 </style>

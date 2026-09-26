@@ -11,7 +11,7 @@ edges:
     condition: before writing core or store code
   - target: add-an-effect.md
     condition: when the node hosts or produces effects
-last_updated: 2026-08-15
+last_updated: 2026-09-25
 ---
 
 # Add a Gen3 trigger-graph node kind
@@ -88,6 +88,32 @@ Decide two things before writing code:
   read-only until it is added to each list. Symptoms look like an engine bug (the control does
   nothing) while the engine is fine. Test that the STORE can set it, not just that the engine
   honours it.
+- **A SIBLING of an existing kind should share its guards through a predicate, not a list.** Slice
+  (2026-09-25) reuses every Splice store action; instead of adding `'slice'` beside `'splice'` at
+  each of the store's guards, they all ask `voice.isSpliceLike(kind)` (core `types.ts`). One place
+  to extend, and `store.slice-node.test.ts` has one test per shared action — narrowing the predicate
+  back to Splice turns seven of them red, which is the trap covered rather than hoped away.
+- **Ride the sibling's pipeline instead of copying it.** A slice is a `SpliceConfig` with a `space`
+  block: `resolveSlice` goes THROUGH `resolveSplices`, eval shares the `case`, the engine's cascade
+  shaping and the bridge's material regeneration apply unchanged, and the compositor branches only
+  at the geometry, rejoining at a shared modifier-and-composite tail. The web preview now runs the
+  core compositor directly (`trigger-lab/render.ts` is a byte converter), so there is no mirror to
+  keep in step.
+- **Places a new kind must appear that the compiler finds for you:** `CanonicalGraphNodeKind`,
+  `BlockKind`, `render-plan` (exhaustive switch), `kindIcon` / `tint` / `kindLabel`
+  (`Record<NodeKind, …>`), and the styleguide's `faceSubs` in `SectionComposites.svelte` — that
+  last one means the design system must be regenerated. **Places it will NOT find:** the three
+  lints (`scope-lint`, `reachability-lint`, `graph-integrity`), eval's `case`, the add palette
+  (`add-node-taxonomy.ts`, whose order is PINNED by a test Trent fixed — extend it deliberately),
+  the Inspector route, and every store guard.
+- **Extract shared inspector sections, then prove the old inspector did not move.** Screenshots are
+  not byte-stable between identical runs (anti-aliasing), so md5 cannot prove equivalence. Dump the
+  inspector's `innerHTML` in jsdom across a few node states before and after, strip Svelte's
+  `svelte-<hash>` classes, and diff: only component-boundary `<!---->` anchors and inter-section
+  whitespace should differ.
+- **ui-shot after `pnpm install`:** a Vite dev server left running across a reinstall of
+  `node_modules` serves 404 for its own `/@vite/client`, and every capture times out waiting for the
+  shot seam. It looks like a broken change. Kill the ui-shot-started `pnpm dev` stack and re-run.
 
 ## Verify
 - [ ] `pnpm typecheck` (the exhaustive maps are the checklist).

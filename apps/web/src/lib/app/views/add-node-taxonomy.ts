@@ -43,6 +43,8 @@ export const ADD_NODE_TYPES: readonly AddNodeType[] = [
   // Splice sits beside Scope: both are spatial — Scope narrows WHICH pixels a route reaches,
   // Splice cuts those pixels into bands and gives each its own content.
   { kind: 'splice', label: kindLabel.splice, icon: kindIcon.splice, tint: tint.splice, hint: 'cut into bands' },
+  // Slice beside Splice: the same idea cut THROUGH space instead of round the hoops.
+  { kind: 'slice', label: kindLabel.slice, icon: kindIcon.slice, tint: tint.slice, hint: 'cut through space' },
   // The whole modulation family behind one type — it lands as an Envelope (the store's
   // default modulation source) and the inspector swaps it to LFO / CC / Note / OSC / Random.
   { kind: 'envelope', label: 'Modulate', icon: Waves, tint: tint.envelope, hint: 'envelope by default' },

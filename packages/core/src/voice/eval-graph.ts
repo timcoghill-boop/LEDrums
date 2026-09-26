@@ -23,6 +23,7 @@ import type {
   TriggerGraph,
 } from './types';
 import { resolveSplices } from './splice';
+import { resolveSlice } from './slice';
 import type { Mapping } from './modulation';
 import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
@@ -293,7 +294,7 @@ function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): 
  * voice at all (again mirroring an empty Mix).
  */
 function makeSpliceDraft(state: EvalState, graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): PlayDraft | null {
-  const resolved = resolveSplices(node, ctx.bpm, ctx.beatsPerBar);
+  const resolved = node.kind === 'slice' ? resolveSlice(node, ctx.bpm, ctx.beatsPerBar) : resolveSplices(node, ctx.bpm, ctx.beatsPerBar);
   if (!resolved) return null;
   const mods = resolveModifierChain(graph, node);
   const modulations = resolveNodeModulations(graph, node);
@@ -492,10 +493,14 @@ function evalGraphGen3FromPlan(
       // A splice seeds its own layer, so it behaves exactly like an Effect in the walk:
       // one firing per trigger however many flow edges converge on it (R14), and the draft
       // travels downstream through Scope/Modifier/Mix/Output like any other layer.
-      case 'splice': {
+      // A slice is a splice cut through space: same draft, same latch, same everything but
+      // its geometry, which rides on the config (`space`) for the compositor to read.
+      case 'splice':
+      case 'slice': {
         const draft = makeSpliceDraft(state, graph, node, ctx);
         if (!draft) break;
-        via.set(node.id, labelFor(node, 'Splice'));
+        const noun = node.kind === 'slice' ? 'Slice' : 'Splice';
+        via.set(node.id, labelFor(node, noun));
         if (firedEffects.has(node.id)) break;
         firedEffects.add(node.id);
         let latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
@@ -509,7 +514,7 @@ function evalGraphGen3FromPlan(
           if (alive && current) {
             if ((node.spliceLoopRetrigger ?? 'stop') === 'stop') {
               state.latched.set(sk, null);
-              actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, 'Splice off') });
+              actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, `${noun} off`) });
               break;
             }
             draft.supersedePriorVoice = true; // restart: re-sync rather than stack

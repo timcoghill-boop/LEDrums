@@ -29,6 +29,7 @@
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import ScopeNodeInspector from './inspectors/ScopeNodeInspector.svelte';
   import SpliceNodeInspector from './inspectors/SpliceNodeInspector.svelte';
+  import SliceNodeInspector from './inspectors/SliceNodeInspector.svelte';
   import OutputNodeInspector from './inspectors/OutputNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
@@ -151,6 +152,8 @@
       <ScopeNodeInspector {store} {node} />
     {:else if node.kind === 'splice'}
       <SpliceNodeInspector {store} {node} />
+    {:else if node.kind === 'slice'}
+      <SliceNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}

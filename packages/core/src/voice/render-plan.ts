@@ -61,8 +61,10 @@ export function nodeCategory(kind: NodeKind): RenderPlanNodeCategory {
     case 'effect':
     case 'play':
     // A `splice` seeds a layer of its own (its splices ARE its content), so it is a producer
-    // even though it also hosts several effects — nothing downstream needs to know that.
+    // even though it also hosts several effects — nothing downstream needs to know that. A
+    // `slice` is the same thing cut through space instead of round the hoops.
     case 'splice':
+    case 'slice':
       return 'layer-producer';
     case 'scope':
     case 'modifier':

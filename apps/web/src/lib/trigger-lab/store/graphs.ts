@@ -99,6 +99,13 @@ export function spliceNodeInit(buses: readonly Bus[] = []): Pick<GraphNode, 'spl
   };
 }
 
+/** A fresh Slice: the splice seed minus the partition (a slice has none) plus its geometry —
+    four colour slabs along X, fully velocity sensitive, so it reads as working on the first hit. */
+export function sliceNodeInit(buses: readonly Bus[] = []): Pick<GraphNode, 'splices' | 'spliceCount' | 'spliceChase' | 'spliceRateMode' | 'spliceDivision' | 'busId' | 'sliceAxis' | 'sliceVelocity'> {
+  const { splicePartition: _none, ...seed } = spliceNodeInit(buses);
+  return { ...seed, sliceAxis: 'x', sliceVelocity: 1 };
+}
+
 /** Human label for a graph key: the stored display name (`graphNames`, populated for every
     graph at hydrate), else a kit-derived legacy pad label, else the raw key. */
 export function graphLabelOf(graphNames: Record<string, string>, key: string, pads: readonly Pad[]): string {
