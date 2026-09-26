@@ -3336,7 +3336,9 @@ export class TriggerLab {
   }
 
   private async writeFile(text: string, fileName: string, okMessage: string): Promise<SaveOutcome> {
+    const generation = this.documentGeneration;
     const outcome = await saveTextFile(fileName, text);
+    if (generation !== this.documentGeneration) return outcome;
     if (outcome === 'saved') pushToast(okMessage, { tone: 'success' });
     else if (outcome === 'failed') pushToast('Couldn’t save the file.', { tone: 'error' });
     return outcome;

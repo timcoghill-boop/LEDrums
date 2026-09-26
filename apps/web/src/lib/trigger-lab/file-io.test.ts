@@ -8,8 +8,8 @@ import { openTextFile, safeFileName, saveTextFile } from './file-io';
 
 /* The file panel adapter. The desktop route asks the shell for its native panels; the browser route
    downloads / picks. What matters here: the desktop commands are called with the right arguments, a
-   cancel reads as a cancel, and an OLDER desktop shell (no such command) falls back to the browser
-   route instead of failing. */
+   cancel reads as a cancel, an OLDER desktop shell (no such command) falls back to the browser
+   route instead of failing, and a real shell IO error reads as a failure, never as a fallback. */
 
 afterEach(() => {
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -52,12 +52,22 @@ describe('desktop route', () => {
 
   it('falls back to a browser download when the shell has no such command', async () => {
     asDesktop();
-    invoke.mockRejectedValueOnce(new Error('command save_text_file not found'));
+    invoke.mockRejectedValueOnce('save_text_file not allowed. Command not found');
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     URL.createObjectURL = vi.fn(() => 'blob:x');
     URL.revokeObjectURL = vi.fn();
     expect(await saveTextFile('a.json', '{}')).toBe('saved');
     expect(click).toHaveBeenCalled();
+  });
+
+  it('reports a real shell IO error as a failure instead of falling back', async () => {
+    asDesktop();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    invoke.mockRejectedValueOnce('Permission denied (os error 13)');
+    expect(await saveTextFile('a.json', '{}')).toBe('failed');
+    invoke.mockRejectedValueOnce('file is too large (99999999 bytes)');
+    expect(await openTextFile()).toBe('failed');
+    expect(click).not.toHaveBeenCalled();
   });
 });
 

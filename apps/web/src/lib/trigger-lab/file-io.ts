@@ -6,8 +6,8 @@
    - Desktop (Tauri webview): native Save / Open panels through the shell's `save_text_file` /
      `open_text_file` commands. A WKWebView neither downloads an `<a download>` blob nor reliably
      shows an `<input type=file>` panel without host support, so the shell owns the dialogs. An
-     older shell without the commands makes `invoke` reject — we then fall through to the browser
-     route rather than failing.
+     older shell without the commands rejects with Tauri's ACL error — only then do we fall through
+     to the browser route; any other rejection is a real IO failure and reads as `failed`.
    - Browser: the File System Access picker where it exists (Chrome/Edge), else a blob download;
      an `<input type=file>` for opening.
 
@@ -51,14 +51,21 @@ async function tauriInvoke(): Promise<Invoke | null> {
   }
 }
 
+/** Tauri refuses a command the shell never registered with `<command> not allowed. Command not
+    found`; the shell's own IO errors are OS messages that never say "not allowed". */
+function isMissingCommand(error: unknown): boolean {
+  return /not allowed/i.test(String(error));
+}
+
 /** Ask the user where to save `text`, suggesting `fileName`. */
 export async function saveTextFile(fileName: string, text: string): Promise<SaveOutcome> {
   const invoke = await tauriInvoke();
   if (invoke) {
     try {
       return (await invoke<boolean>('save_text_file', { suggestedName: fileName, contents: text })) ? 'saved' : 'cancelled';
-    } catch {
+    } catch (error) {
       // An older desktop shell has no such command — the browser route below may still work.
+      if (!isMissingCommand(error)) return 'failed';
     }
   }
   return saveInBrowser(fileName, text);
@@ -71,8 +78,9 @@ export async function openTextFile(): Promise<OpenOutcome> {
     try {
       const file = await invoke<{ name: string; contents: string } | null>('open_text_file');
       return file ? { name: file.name, text: file.contents } : 'cancelled';
-    } catch {
+    } catch (error) {
       // Older shell, as above.
+      if (!isMissingCommand(error)) return 'failed';
     }
   }
   return openInBrowser();
