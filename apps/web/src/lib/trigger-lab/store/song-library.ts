@@ -70,8 +70,8 @@ function nsKey(prefix: string, key: string): string {
  *
  * "Reaches" is defined precisely:
  *  - graphs  = the song's referenced graph keys that exist in `sources.graphs`;
- *  - effects = every play node's `effectId` across those graphs, PLUS every section look's effect;
- *  - presets = every play node's `presetId` (provenance snapshot, S39), PLUS the `:default`
+ *  - effects = every Effect node's `effectId` across those graphs, PLUS every section look's effect;
+ *  - presets = every Effect node's `presetId` (provenance snapshot, S39), PLUS the `:default`
  *              preset of each look effect (the engine seeds a look from `<effectId>:default`).
  * Only defs actually present in `sources` are carried (a dangling ref renders nothing here just
  * as it did in the source show — faithful, not repaired). Modifier / lfo / cc / envelope nodes
@@ -85,12 +85,14 @@ export function extractSongClosure(song: Song, sources: ClosureSources, libraryS
   const graphKeys = referencedGraphs(song).filter((k) => sources.graphs[k] !== undefined);
   const graphKeySet = new Set(graphKeys);
 
-  // (2) Reached effect + preset ids: walk the reachable graphs' PLAY nodes, then the looks.
+  // (2) Reached effect + preset ids: walk the reachable graphs' EFFECT nodes, then the looks.
   const effectIds = new Set<string>();
   const presetIds = new Set<string>();
   for (const key of graphKeys) {
     for (const node of sources.graphs[key]!.nodes) {
-      if (node.kind !== 'play') continue; // modifier/lfo/cc/env nodes reach no effect or preset
+      // `play` is the legacy name for an Effect node; hydrate renames it, so a live graph holds
+      // `effect`. Modifier/lfo/cc/env nodes reach no effect or preset.
+      if (node.kind !== 'play' && node.kind !== 'effect') continue;
       if (node.effectId) effectIds.add(node.effectId);
       if (node.presetId) presetIds.add(node.presetId);
     }

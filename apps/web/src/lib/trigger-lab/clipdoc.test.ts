@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildGraphClipDoc,
+  buildNodeClipDoc,
   buildSectionClipDoc,
   buildSongClipDoc,
   buildPatchClipDoc,
@@ -416,5 +417,85 @@ describe('remapClipDoc — patch is not remapped', () => {
     const doc = buildPatchClipDoc({ kit: { drums: [] }, inputMap: {}, output: {} } as unknown as PatchPayload);
     const r = remapClipDoc(doc as ClipDoc, ctx());
     expect(isClipParseError(r)).toBe(true);
+  });
+});
+
+// ---- node kind + Effect-node / Splice-slot closures (Save / Load node) --------
+
+describe('node ClipDoc (Save / Load node)', () => {
+  const custom = effect('fx-mine', { name: 'Mine' });
+  const src = sources({ effects: [custom], presets: [preset('fx-mine:default', 'fx-mine')] });
+  const effectNode = makeNode('effect', 'n-7', 40, 80, { effectId: 'fx-mine', presetId: 'fx-mine:default', params: { hue: 0.25 } });
+
+  it('carries the node and the effect + preset it uses, and round-trips', () => {
+    const doc = buildNodeClipDoc(effectNode, src);
+    expect(doc.kind).toBe('node');
+    expect(doc.payload.node).toMatchObject({ id: 'n-7', kind: 'effect', effectId: 'fx-mine' });
+    expect(doc.deps.effects?.map((e) => e.id)).toEqual(['fx-mine']);
+    expect(doc.deps.presets?.map((p) => p.id)).toEqual(['fx-mine:default']);
+    expect(parse(serialize(doc))).toEqual(doc);
+  });
+
+  it('remaps the node onto a show that lacks its effect — the effect arrives under a local id', () => {
+    const doc = buildNodeClipDoc(effectNode, src);
+    const res = remapClipDoc(doc, ctx({ mint: { graph: () => 'g', effect: () => 'fx-new', preset: () => 'p', section: () => 's', song: () => 'so', scene: () => 'sc' } }));
+    if (isClipParseError(res)) throw new Error(res.message);
+    expect(res.kind).toBe('node');
+    expect(res.effects.map((e) => e.id)).toEqual(['fx-new']);
+    expect(res.node).toMatchObject({ effectId: 'fx-new', presetId: 'fx-new:default', params: { hue: 0.25 } });
+  });
+
+  it('reuses an identical local effect instead of duplicating it', () => {
+    const doc = buildNodeClipDoc(effectNode, src);
+    const res = remapClipDoc(doc, ctx({ effects: [{ ...custom, id: 'fx-local' }] }));
+    if (isClipParseError(res)) throw new Error(res.message);
+    expect(res.effects).toEqual([]);
+    expect(res.node?.effectId).toBe('fx-local');
+  });
+
+  it('reads a legacy `play` node as an Effect node', () => {
+    const doc = buildNodeClipDoc(effectNode, src);
+    const legacy = JSON.parse(serialize(doc));
+    legacy.payload.node.kind = 'play';
+    const back = parse(JSON.stringify(legacy));
+    expect(!isClipParseError(back) && back.kind === 'node' && back.payload.node.kind).toBe('effect');
+  });
+
+  it('rejects a node payload without a kind or id', () => {
+    const doc = JSON.parse(serialize(buildNodeClipDoc(effectNode, src)));
+    delete doc.payload.node.kind;
+    const back = parse(JSON.stringify(doc));
+    expect(isClipParseError(back) && back.reason).toBe('malformed');
+  });
+});
+
+describe('closure follows Effect nodes and Splice slots', () => {
+  it('a modern `effect` node carries its custom effect (not only a legacy `play` node)', () => {
+    const graph: TriggerGraph = {
+      nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'n1', 0, 0, { effectId: 'fx-mine', presetId: 'fx-mine:default' })],
+      edges: [{ id: 'e1', from: 'trigger', to: 'n1' }],
+    };
+    const doc = buildGraphClipDoc('g', sources({ graphs: { g: graph }, effects: [effect('fx-mine')], presets: [preset('fx-mine:default', 'fx-mine')] }));
+    expect(doc.deps.effects?.map((e) => e.id)).toEqual(['fx-mine']);
+    expect(doc.deps.presets?.map((p) => p.id)).toEqual(['fx-mine:default']);
+  });
+
+  it('a Splice slot carries its custom effect, and the slot is re-pointed on load', () => {
+    const splice = makeNode('splice', 'n2', 0, 0, { splices: [{ color: '#ff0000', effectId: 'fx-slot' }, { color: '#0000ff' }] });
+    const doc = buildNodeClipDoc(splice, sources({ effects: [effect('fx-slot')] }));
+    expect(doc.deps.effects?.map((e) => e.id)).toEqual(['fx-slot']);
+
+    const res = remapClipDoc(doc, ctx({ mint: { graph: () => 'g', effect: () => 'fx-slot-2', preset: () => 'p', section: () => 's', song: () => 'so', scene: () => 'sc' } }));
+    if (isClipParseError(res)) throw new Error(res.message);
+    expect(res.node?.splices?.[0]?.effectId).toBe('fx-slot-2');
+    expect(res.node?.splices?.[1]).toEqual({ color: '#0000ff' });
+  });
+
+  it('a Splice slot on a built-in effect keeps the built-in id', () => {
+    const splice = makeNode('splice', 'n2', 0, 0, { splices: [{ effectId: 'swirl' }] });
+    const res = remapClipDoc(buildNodeClipDoc(splice, sources({ effects: [effect('swirl')] })), ctx());
+    if (isClipParseError(res)) throw new Error(res.message);
+    expect(res.effects).toEqual([]);
+    expect(res.node?.splices?.[0]?.effectId).toBe('swirl');
   });
 });

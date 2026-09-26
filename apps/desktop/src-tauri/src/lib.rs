@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -247,6 +248,69 @@ fn parse_pin(line: &str) -> Option<String> {
     re.captures(line)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_string())
+}
+
+/// The largest file `open_text_file` will read. A saved graph or node is kilobytes; refusing a huge
+/// file keeps a mis-picked video from being pulled into the webview as a string.
+const MAX_OPEN_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// A text file the user picked, as the web UI receives it.
+#[derive(Serialize)]
+struct OpenedTextFile {
+    name: String,
+    contents: String,
+}
+
+/// Save / Load for graphs and nodes: the webview can't download a blob or reliably open a file
+/// panel on its own, so the shell shows the native panel and does the file IO. The path is always
+/// one the user chose in the panel, never one the page names. Returns false when the user cancels.
+#[tauri::command]
+async fn save_text_file(app: AppHandle, suggested_name: String, contents: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(picked) = app
+            .dialog()
+            .file()
+            .set_file_name(suggested_name)
+            .add_filter("LEDrums file", &["json"])
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = picked.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The Load half of [`save_text_file`]: the user picks a `.json` file and the web UI gets its text.
+/// `None` when the user cancels.
+#[tauri::command]
+async fn open_text_file(app: AppHandle) -> Result<Option<OpenedTextFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(picked) = app
+            .dialog()
+            .file()
+            .add_filter("LEDrums file", &["json"])
+            .blocking_pick_file()
+        else {
+            return Ok(None);
+        };
+        let path = picked.into_path().map_err(|e| e.to_string())?;
+        let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+        if size > MAX_OPEN_FILE_BYTES {
+            return Err(format!("file is too large ({size} bytes)"));
+        }
+        let contents = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Ok(Some(OpenedTextFile { name, contents }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Navigate the full-app webview window to the local origin.
@@ -666,7 +730,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_boot_status,
             check_for_update_now,
-            install_update_now
+            install_update_now,
+            save_text_file,
+            open_text_file
         ])
         .setup(move |app| {
             // Kick off the OTA check early and OFF the startup path: an update can be offered (and

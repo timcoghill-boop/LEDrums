@@ -36,6 +36,8 @@
   import Unlink2 from '@lucide/svelte/icons/unlink-2';
   import ListMinus from '@lucide/svelte/icons/list-minus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Save from '@lucide/svelte/icons/save';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -113,6 +115,13 @@
     return [
       { label: canArrange ? 'Rename' : `Rename — ${blockedReason}`, icon: Pencil, disabled: !canArrange, onSelect: () => startRename(key) },
       { label: canArrange ? 'Duplicate into section' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => duplicateInto(key) },
+      { label: 'Save graph to file…', icon: Save, onSelect: () => void store.saveGraphToFile(key) },
+      {
+        label: store.canMutateGraph(key) ? 'Load file into graph…' : `Load — ${blockedReason}`,
+        icon: FolderOpen,
+        disabled: !store.canMutateGraph(key),
+        onSelect: () => void store.loadGraphFromFile(key),
+      },
       // Same action + label as the Sections view's row menu; only a linked placement in one of
       // this show's own songs can be split off (a library song's placements are canonical).
       ...(store.activeSongIsLocal && placements(key) > 1

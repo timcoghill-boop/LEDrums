@@ -5,6 +5,8 @@ fn main() {
                 "get_boot_status",
                 "check_for_update_now",
                 "install_update_now",
+                "save_text_file",
+                "open_text_file",
             ]),
         ),
     )

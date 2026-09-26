@@ -12,12 +12,15 @@
   import { describePatchNode } from '../patch-topology';
   import { type GraphNode, type NodeKind } from '../../trigger-lab/sim';
   import { KIND_OPTS, MOD_SOURCE_OPTS } from '../views/node-options';
+  import { kindLabel } from '../views/trigger-node-meta';
   import { patchEditorFor, type PatchEditor } from './patch-inspector';
   import { patchLabel } from './inspectors/forms';
   import Select from '../../ui/Select.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Save from '@lucide/svelte/icons/save';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import LockKeyhole from '@lucide/svelte/icons/lock-keyhole';
   import SubtypeSwitcher from './inspectors/SubtypeSwitcher.svelte';
@@ -62,7 +65,27 @@
   const patchId = $derived(sel?.kind === 'patch' ? sel.nodeId : null);
   const ed = $derived<PatchEditor | null>(patchId ? patchEditorFor(patchId) : null);
   const project = $derived(store.project);
+
+  /** What a saved node's file is called: its effect for an Effect node, else its kind. */
+  function nodeFileLabel(n: GraphNode): string {
+    return store.effectOf(n)?.name ?? kindLabel[n.kind] ?? 'Node';
+  }
+  /** Load a node file onto this node. A file of another kind lands as a NEW node beside it —
+      follow it, so the inspector shows what just arrived rather than the unchanged original. */
+  async function loadNode(n: GraphNode): Promise<void> {
+    const result = await store.loadNodeFromFile(n);
+    if (result?.ok && result.nodeId && result.nodeId !== n.id) shell.select({ kind: 'node', nodeId: result.nodeId });
+  }
 </script>
+
+<!-- Save / Load sit in every editable node's header, beside Remove: the node and what it uses
+     (its effect, preset, canvas scene) go to a file, and a file comes back onto the node. -->
+{#snippet fileButtons(n: GraphNode)}
+  <span class="filebtns">
+    <IconButton icon={Save} label="Save node to file" variant="soft" size={14} onclick={() => void store.saveNodeToFile(n, nodeFileLabel(n))} />
+    <IconButton icon={FolderOpen} label="Load node from file" variant="soft" size={14} onclick={() => void loadNode(n)} />
+  </span>
+{/snippet}
 
 <!-- Every modulation SOURCE node shares one header, the same shape every other editable
      node's header has: an in-place SUBTYPE switcher (F3 item 11 — envelope ⇄ LFO ⇄ CC ⇄ note
@@ -83,6 +106,7 @@
         ariaLabel="Modulation source type"
       />
     </span>
+    {@render fileButtons(n)}
     <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(n)} />
   </header>
 {/snippet}
@@ -132,11 +156,12 @@
          would render empty — the output editor supplies its own anchor header instead. -->
     <OutputNodeInspector {store} {node} />
   {:else if node}
-    <!-- shared header for every editable node: change its kind + remove it -->
+    <!-- shared header for every editable node: change its kind, save / load it, remove it -->
     <header class="nodehead">
       <span class="kindsel">
         <Select value={node.kind} options={KIND_OPTS} onChange={(v) => store.changeKind(node, v as NodeKind)} ariaLabel="Node type" />
       </span>
+      {@render fileButtons(node)}
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
     {#if node.kind === 'play' || node.kind === 'effect'}
@@ -286,6 +311,13 @@
     gap: var(--space-2);
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-faint);
+  }
+  /* Save / Load are a pair; the extra space after them keeps Remove from reading as a third
+     file verb — and from being one slip of the pointer away from Load. */
+  .filebtns {
+    display: inline-flex;
+    gap: var(--space-2);
+    margin-right: var(--space-2);
   }
   .kindsel {
     display: inline-flex;

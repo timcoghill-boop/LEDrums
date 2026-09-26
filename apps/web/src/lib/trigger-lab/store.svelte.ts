@@ -140,6 +140,7 @@ import * as songRefsLib from './store/song-library-refs';
 import { extractSongClosure, type ClosureSources } from './store/song-library';
 import {
   buildGraphClipDoc,
+  buildNodeClipDoc,
   buildSectionClipDoc,
   buildSongClipDoc,
   serialize,
@@ -154,6 +155,7 @@ import {
   type RemapResult,
 } from './clipdoc';
 import { readClipboardText, writeClipboardText } from './clipboard-io';
+import { openTextFile, safeFileName, saveTextFile, type OpenOutcome, type SaveOutcome } from './file-io';
 import { pushToast } from '../ui/toast.svelte';
 import { bindingRejectionMessage } from '../app/binding-claim-label';
 import { EngineLinkSync } from './store/transport';
@@ -361,11 +363,42 @@ function* remapResultIds(res: RemapResult): Iterable<string> {
   }
 }
 
+/** The outcome of applying a graph/node FILE — the caller toasts `message`. `graphKey` is the graph
+    now holding the content; `nodeId` the node that now holds it (a new one when the file's kind
+    differed from the target's, so the inspector can move its selection there). */
+export type FileLoadResult =
+  | { ok: true; message: string; graphKey?: string; nodeId?: string }
+  | { ok: false; message: string };
+
+/** Graph files and node files end in their own double extension, so a folder of them reads at a
+    glance and the Open panel's `.json` filter still shows them. */
+export const GRAPH_FILE_EXT = '.ledrums-graph.json';
+export const NODE_FILE_EXT = '.ledrums-node.json';
+
+/** A parse failure, worded for a file the user picked rather than for the clipboard. */
+function friendlyFileMessage(reason: ClipParseReason): string {
+  switch (reason) {
+    case 'foreign':
+      return 'That file isn’t a LEDrums file.';
+    case 'unsupported-version':
+      return 'That file was saved by a newer version of LEDrums.';
+    default:
+      return 'That file couldn’t be read as a LEDrums graph or node.';
+  }
+}
+
+/** A file's own name minus its LEDrums/JSON extension — the fallback name for a loaded graph. */
+function fileStem(name: string): string {
+  return name.replace(/\.ledrums-(graph|node)\.json$/i, '').replace(/\.json$/i, '').trim();
+}
+
 /** The success message for a materialized authored paste. */
 function pasteSuccessMessage(res: RemapResult): string {
   switch (res.kind) {
     case 'graph':
       return 'Pasted graph.';
+    case 'node':
+      return 'Pasted node.';
     case 'section':
       return 'Pasted section.';
     case 'song':
@@ -3257,9 +3290,7 @@ export class TriggerLab {
     reserveIds(remapResultIds(res));
     if (Object.keys(res.graphs).length > 0) this.graphs = { ...this.graphs, ...res.graphs };
     if (Object.keys(res.graphNames).length > 0) this.graphNames = { ...this.graphNames, ...res.graphNames };
-    if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
-    if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
-    if (res.canvasScenes.length > 0) this.canvasScenes = [...this.canvasScenes, ...res.canvasScenes];
+    this.unionRemapDeps(res);
     if (res.kind === 'graph' && res.graphKey) {
       this.selectedPadKey = res.graphKey;
     } else if (res.kind === 'section' && res.section) {
@@ -3269,6 +3300,168 @@ export class TriggerLab {
       this.songs = [...this.songs, song];
       this.activeSongId = song.id;
     }
+  }
+
+  /** Add a materialized closure's fresh effects / presets / canvas scenes (reused and built-in
+      deps are absent from `res`, so nothing is duplicated). */
+  private unionRemapDeps(res: RemapResult): void {
+    if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
+    if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
+    if (res.canvasScenes.length > 0) this.canvasScenes = [...this.canvasScenes, ...res.canvasScenes];
+  }
+
+  // --- save / load to a file ---------------------------------------------------------------
+  // The file is the SAME ClipDoc JSON the clipboard carries (pretty-printed), so a saved graph
+  // can also be pasted and a copied one saved: one format, two transports. Load goes through the
+  // same remap as paste — every id is re-keyed against this show, built-in effects keep their
+  // ids, identical custom effects are reused rather than duplicated. The `apply…File` methods are
+  // the IO-free heart (text in, result out) so they are unit-testable; the `…FromFile` wrappers add
+  // the file panel and the toast.
+
+  /** Save a graph (by key) and the effects/presets/scenes it uses to a file the user picks. */
+  async saveGraphToFile(key: string): Promise<SaveOutcome | null> {
+    if (!this.resolvedView.graphs[key]) return null;
+    const label = this.graphLabel(key);
+    const doc = buildGraphClipDoc(key, this.clipSources(), this.clipMeta());
+    return this.writeFile(JSON.stringify(doc, null, 2), `${safeFileName(label, 'graph')}${GRAPH_FILE_EXT}`, `Saved “${label}”.`);
+  }
+
+  /** Save one node and what it uses to a file. `label` names the file (the inspector passes the
+      node's effect or kind name). The trigger and output anchors are not nodes you can move
+      between graphs, so they don't save. */
+  async saveNodeToFile(node: GraphNode, label: string): Promise<SaveOutcome | null> {
+    if (isAnchorNode(node)) return null;
+    const doc = buildNodeClipDoc($state.snapshot(node) as GraphNode, this.clipSources(), this.clipMeta());
+    return this.writeFile(JSON.stringify(doc, null, 2), `${safeFileName(label, 'node')}${NODE_FILE_EXT}`, `Saved the ${label} node.`);
+  }
+
+  private async writeFile(text: string, fileName: string, okMessage: string): Promise<SaveOutcome> {
+    const outcome = await saveTextFile(fileName, text);
+    if (outcome === 'saved') pushToast(okMessage, { tone: 'success' });
+    else if (outcome === 'failed') pushToast('Couldn’t save the file.', { tone: 'error' });
+    return outcome;
+  }
+
+  /** Ask for a file, then hand its text to `apply` and toast the result. Guards against the show
+      being replaced while the panel was open. */
+  private async readFileThen(apply: (text: string, name: string) => FileLoadResult): Promise<FileLoadResult | null> {
+    const generation = this.documentGeneration;
+    const opened: OpenOutcome = await openTextFile();
+    if (generation !== this.documentGeneration || opened === 'cancelled') return null;
+    const result: FileLoadResult = opened === 'failed' ? { ok: false, message: 'Couldn’t read that file.' } : apply(opened.text, opened.name);
+    pushToast(result.message, { tone: result.ok ? 'success' : 'error' });
+    return result;
+  }
+
+  /** Parse file text as one kind of ClipDoc, remapped against this show. */
+  private remapFile(text: string, want: 'graph' | 'node'): RemapResult | { error: string } {
+    const doc = parse(text);
+    if (isClipParseError(doc)) return { error: friendlyFileMessage(doc.reason) };
+    if (doc.kind !== want) {
+      const where = doc.kind === 'node' ? 'load it from a node’s inspector' : doc.kind === 'graph' ? 'load it from a graph’s right-click menu' : 'paste it instead';
+      return { error: `That file holds a ${doc.kind}, not a ${want} — ${where}.` };
+    }
+    const res = remapClipDoc(doc, this.remapCtx());
+    return isClipParseError(res) ? { error: friendlyFileMessage(res.reason) } : res;
+  }
+
+  /**
+   * Replace a graph's contents with a graph file — one undo step. The graph keeps its key, its
+   * name and every section it is placed in (a linked graph changes everywhere, as any edit does).
+   * It also keeps the pad it fires from when it has one: the file's trigger is only used when
+   * this graph's trigger is unassigned, so loading a look onto the snare graph doesn't retarget
+   * it to the kick the file was saved from.
+   */
+  applyGraphFileTo(key: string, text: string): FileLoadResult {
+    if (!this.canMutateGraph(key)) return { ok: false, message: this.isViewer ? 'This show is read-only.' : 'This graph is a read-only library reference.' };
+    const res = this.remapFile(text, 'graph');
+    if ('error' in res) return { ok: false, message: res.error };
+    const graph = res.graphKey ? res.graphs[res.graphKey] : undefined;
+    if (!graph) return { ok: false, message: friendlyFileMessage('malformed') };
+    const current = this.graphs[key]?.nodes.find((node) => node.kind === 'trigger');
+    const incoming = graph.nodes.find((node) => node.kind === 'trigger');
+    if (current?.source && incoming) incoming.source = structuredClone($state.snapshot(current.source));
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      reserveIds(remapResultIds(res));
+      this.unionRemapDeps(res);
+      this.graphs = { ...this.graphs, [key]: graph };
+    });
+    return { ok: true, message: `Loaded into “${this.graphLabel(key)}”.`, graphKey: key };
+  }
+
+  /** Add a graph file to a section of the active song as a NEW graph — one undo step. It is named
+      from the file (its saved name, else the file name) and takes the file's trigger as-is. */
+  applyGraphFileToSection(sectionId: string, text: string, fileName = ''): FileLoadResult {
+    if (!this.canEditActiveSong) return { ok: false, message: this.activeSongEditBlockReason ?? 'This song is read-only.' };
+    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
+    if (!song?.sections.some((section) => section.id === sectionId)) return { ok: false, message: 'That section is gone.' };
+    const res = this.remapFile(text, 'graph');
+    if ('error' in res) return { ok: false, message: res.error };
+    const key = res.graphKey;
+    const graph = key ? res.graphs[key] : undefined;
+    if (!key || !graph) return { ok: false, message: friendlyFileMessage('malformed') };
+    const name = res.graphNames[key]?.trim() || fileStem(fileName) || graphsLib.nextGraphName(this.graphNames);
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      reserveIds(remapResultIds(res));
+      this.unionRemapDeps(res);
+      this.graphs = { ...this.graphs, [key]: graph };
+      this.graphNames = { ...this.graphNames, [key]: name };
+      this.songs = this.songs.map((candidate) => (candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate));
+      this.selectedPadKey = key;
+    });
+    return { ok: true, message: `Loaded “${name}”.`, graphKey: key };
+  }
+
+  /**
+   * Load a node file onto a node of the selected graph — one undo step. A file of the SAME kind
+   * replaces the node's settings in place: it keeps its id, its position and its wires. A file of
+   * a DIFFERENT kind would leave those wires meaningless, so it is added beside the node instead
+   * (unwired) and the result names the new node.
+   */
+  applyNodeFileTo(target: GraphNode, text: string): FileLoadResult {
+    const g = this.selectedGraph;
+    if (!g || !this.canMutateNode(target) || isAnchorNode(target)) return { ok: false, message: 'This node can’t be changed.' };
+    const res = this.remapFile(text, 'node');
+    if ('error' in res) return { ok: false, message: res.error };
+    const loaded = res.node;
+    if (!loaded || isAnchorNode(loaded)) return { ok: false, message: 'That file holds a graph anchor, which can’t be loaded as a node.' };
+    const sameKind = loaded.kind === target.kind || (isEffectNode(loaded) && isEffectNode(target));
+    this.pushUndoSnapshot();
+    let nodeId = target.id;
+    this.batchIntoCurrentUndo(() => {
+      reserveIds(remapResultIds(res));
+      this.unionRemapDeps(res);
+      if (sameKind) {
+        const next: GraphNode = { ...loaded, id: target.id, x: target.x, y: target.y };
+        g.nodes = g.nodes.map((node) => (node.id === target.id ? next : node));
+        if (this.settingsBlock?.id === target.id) this.settingsBlock = null;
+        if (this.galleryBlock?.id === target.id) this.galleryBlock = null;
+        if (this.envTarget?.block.id === target.id) this.envTarget = null;
+      } else {
+        nodeId = this.placeClone(loaded, target.x + 36, target.y + 36)?.id ?? '';
+      }
+    });
+    if (!nodeId) return { ok: false, message: 'There was no room to add the node.' };
+    return sameKind
+      ? { ok: true, message: 'Loaded the node’s settings.', nodeId }
+      : { ok: true, message: `That file holds a different kind of node, so it was added beside this one.`, nodeId };
+  }
+
+  /** Right-click → Load into graph: pick a graph file and replace this graph's contents. */
+  loadGraphFromFile(key: string): Promise<FileLoadResult | null> {
+    return this.readFileThen((text) => this.applyGraphFileTo(key, text));
+  }
+
+  /** Pick a graph file and add it to a section as a new graph. */
+  loadGraphFileIntoSection(sectionId: string): Promise<FileLoadResult | null> {
+    return this.readFileThen((text, name) => this.applyGraphFileToSection(sectionId, text, name));
+  }
+
+  /** Inspector → Load: pick a node file and load it onto (or beside) `target`. */
+  loadNodeFromFile(target: GraphNode): Promise<FileLoadResult | null> {
+    return this.readFileThen((text) => this.applyNodeFileTo(target, text));
   }
 
   /**
@@ -3312,7 +3505,7 @@ export class TriggerLab {
     if (isClipParseError(res)) return { ok: false, message: friendlyParseMessage(res.reason) };
     this.pushUndoSnapshot();
     this.batchIntoCurrentUndo(() => this.applyRemapResult(res));
-    return { ok: true, kind: res.kind, message: pasteSuccessMessage(res) };
+    return { ok: true, kind: opts.context, message: pasteSuccessMessage(res) };
   }
 
   /** Toast the outcome of a paste. */
