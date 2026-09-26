@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render, within } from '@testing-library/svelte';
+import { fireEvent, render, within } from '@testing-library/svelte';
 import type { GraphNode } from '../../../trigger-lab/sim';
 import type { TriggerLab } from '../../../trigger-lab/store.svelte';
 import { makeNode } from '../../../trigger-lab/sim';
@@ -135,5 +135,17 @@ describe('SliceNodeInspector — shared sections', () => {
     for (const label of ['On', 'Axis', 'Tilt', 'Velocity', 'Mode', 'THROUGH KIT', 'THROUGH SLICES', 'COLOUR CHASE']) {
       expect(getByLabelText(`About ${label}`), label).toBeTruthy();
     }
+  });
+});
+
+describe('SliceNodeInspector — MOVE AROUND stagger', () => {
+  it('commits the increment to the slice’s own field', async () => {
+    const store = stubStore();
+    const { getByLabelText } = renderInspector({ spliceChase: 'stagger' }, store);
+    const input = getByLabelText('Slice stagger increment') as HTMLInputElement;
+    input.focus();
+    await fireEvent.input(input, { target: { value: '7' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(store.setSpliceSetting).toHaveBeenCalledWith(expect.anything(), { sliceIncrementPct: 7 });
   });
 });

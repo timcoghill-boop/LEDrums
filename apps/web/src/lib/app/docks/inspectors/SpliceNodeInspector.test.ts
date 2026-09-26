@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render, within } from '@testing-library/svelte';
+import { fireEvent, render, within } from '@testing-library/svelte';
 import type { GraphNode } from '../../../trigger-lab/sim';
 import type { TriggerLab } from '../../../trigger-lab/store.svelte';
 import { makeNode } from '../../../trigger-lab/sim';
@@ -190,5 +190,17 @@ describe('SpliceNodeInspector simplification', () => {
   it('keeps the one explanation that earns its space: the empty state', () => {
     const { container } = renderInspector({ splices: [{}, {}] });
     expect(container.querySelectorAll('p.hint')).toHaveLength(1);
+  });
+});
+
+describe('SpliceNodeInspector — MOVE AROUND stagger', () => {
+  it('commits the increment to the splice’s own field', async () => {
+    const store = stubStore();
+    const { getByLabelText } = renderInspector({ spliceChase: 'stagger' }, store);
+    const input = getByLabelText('Splice stagger increment') as HTMLInputElement;
+    input.focus();
+    await fireEvent.input(input, { target: { value: '7' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(store.setSpliceSetting).toHaveBeenCalledWith(expect.anything(), { spliceIncrementPx: 7 });
   });
 });

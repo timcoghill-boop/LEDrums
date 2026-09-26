@@ -15,22 +15,15 @@
   import Select from '../../../ui/Select.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
-  import SpliceTiming from './SpliceTiming.svelte';
+  import SpliceMoveAround from './SpliceMoveAround.svelte';
   import SpliceEnvelopeFields from './SpliceEnvelopeFields.svelte';
   import SpliceRows from './SpliceRows.svelte';
   import SpliceThroughLayer from './SpliceThroughLayer.svelte';
-  import { DIVISION_OPTS } from '../../views/node-options';
   import {
     SLICE_AXIS_OPTS,
-    SLICE_CHASE_HINTS,
-    SLICE_CHASE_OPTS,
     SLICE_ON_OPTS,
-    SPLICE_DIRECTION_OPTS,
-    SPLICE_MOTION_MODE_HINTS,
-    SPLICE_MOTION_MODE_OPTS,
     SPLICE_ORDER_OPTS,
     SPLICE_PRIMARY_KEYS,
-    SPLICE_RATE_KEYS,
     SPLICE_WAIT_MODE_HINTS,
     SPLICE_WAIT_MODE_OPTS,
     AROUND_LAYER,
@@ -41,10 +34,8 @@
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const on = $derived(node.sliceRegion ? 'space' : node.scope === 'drum' ? 'drum' : 'kit');
-  const chase = $derived(node.spliceChase ?? 'off');
   const jitter = $derived(node.spliceJitter ?? 0);
   const waitMode = $derived(node.spliceWaitMode ?? 'lit');
-  const motionMode = $derived(node.spliceMotionMode ?? 'restart');
   const velocity = $derived(node.sliceVelocity ?? voice.DEFAULT_SLICE_VELOCITY);
   // The three 0…1 amounts are edited in whole percent: Slider keeps the REAL number in its box
   // and shows a transforming format beside it, so a 0…1 value formatted as a percentage reads
@@ -204,50 +195,7 @@
     <section class="group">
       <h4 class="grouptitle">MOVE AROUND</h4>
 
-      <Field label="Motion" info={SLICE_CHASE_HINTS[chase]}>
-        <SegmentedControl
-          value={chase}
-          options={SLICE_CHASE_OPTS}
-          onChange={(v) => store.setSpliceSetting(node, { spliceChase: v as voice.SpliceChaseMode })}
-          ariaLabel="Slice motion"
-        />
-      </Field>
-
-      {#if chase !== 'off'}
-        <Field label="On each hit" info={SPLICE_MOTION_MODE_HINTS[motionMode]}>
-          <SegmentedControl
-            value={motionMode}
-            options={SPLICE_MOTION_MODE_OPTS}
-            onChange={(v) => store.setSpliceSetting(node, { spliceMotionMode: v as voice.SpliceMotionMode })}
-            ariaLabel="Slice motion mode"
-          />
-        </Field>
-
-        <SpliceTiming {store} {node} label="Rate" aria="Slice rate" keys={SPLICE_RATE_KEYS} options={DIVISION_OPTS} fallback={voice.DEFAULT_SPLICE_DIVISION} msDefault={voice.DEFAULT_SPLICE_RATE_MS} msMin={10} />
-
-        {#if chase === 'stagger'}
-          <Field layout="row" label="Increment" unit="%">
-            <CommitInput
-              type="number"
-              value={node.sliceIncrementPct ?? voice.DEFAULT_SLICE_INCREMENT_PCT}
-              min={0}
-              max={voice.MAX_SLICE_INCREMENT_PCT}
-              step={1}
-              onCommit={(v) => store.setSpliceSetting(node, { sliceIncrementPct: Number(v) })}
-              ariaLabel="Slice stagger increment"
-            />
-          </Field>
-        {/if}
-
-        <Field label="Direction">
-          <SegmentedControl
-            value={String(node.spliceDirection ?? 1)}
-            options={SPLICE_DIRECTION_OPTS}
-            onChange={(v) => store.setSpliceSetting(node, { spliceDirection: v === '-1' ? -1 : 1 })}
-            ariaLabel="Slice direction"
-          />
-        </Field>
-      {/if}
+      <SpliceMoveAround {store} {node} noun="Slice" />
     </section>
 
     <section class="group">
