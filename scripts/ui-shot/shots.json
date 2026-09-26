@@ -296,5 +296,29 @@
     "state": "view:trigger,new-graph,add:splice,select:splice",
     "target": "Inspector",
     "viewport": "1600x2400"
+  },
+  "slice-node": {
+    "state": "view:trigger,new-graph,add:slice",
+    "target": "node:Slice"
+  },
+  "slice-inspector": {
+    "state": "view:trigger,new-graph,add:slice,select:slice",
+    "target": "Inspector",
+    "viewport": "1600x2800"
+  },
+  "slice-motion": {
+    "state": "view:trigger,new-graph,add:slice,select:slice,slice-motion:smooth",
+    "target": "Inspector",
+    "viewport": "1600x2800"
+  },
+  "slice-space": {
+    "state": "view:trigger,new-graph,add:slice,select:slice,slice-on:space",
+    "target": "Inspector",
+    "viewport": "1600x2800"
+  },
+  "splice-through": {
+    "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger,splice-through",
+    "target": "Inspector",
+    "viewport": "1600x3000"
   }
 }

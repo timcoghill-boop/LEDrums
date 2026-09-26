@@ -49,7 +49,7 @@ export const CLIPDOC_VERSION = 2;
     targetIds in place (0-based → 1-based) rather than rejecting it as unsupported. */
 export const CLIPDOC_PRIOR_VERSION = 1;
 
-export type ClipDocKind = 'graph' | 'section' | 'song' | 'patch';
+export type ClipDocKind = 'graph' | 'node' | 'section' | 'song' | 'patch';
 
 /** Provenance stamped on export — advisory only (never gates parse/remap). */
 export interface ClipDocMeta {
@@ -86,6 +86,27 @@ function graphSceneRefs(graph: TriggerGraph): Set<string> {
   return out;
 }
 
+/** Custom effects a graph's SPLICE slots host. A slot names its effect directly (it has no
+    preset), and the shared closure walk only follows Effect nodes, so without this a saved Splice
+    would arrive in another show pointing at an effect that isn't there. Built-ins are harmless to
+    carry: remap keeps their ids. Canvas slots are left out — their `canvas:<id>` is a scene ref. */
+function spliceSlotEffects(graphs: Record<string, TriggerGraph>, sources: ClosureSources, carried: readonly EffectDef[]): EffectDef[] {
+  const have = new Set(carried.map((effect) => effect.id));
+  const out: EffectDef[] = [];
+  for (const graph of Object.values(graphs)) {
+    for (const node of graph.nodes) {
+      for (const slot of node.splices ?? []) {
+        if (!slot.effectId || slot.canvasScene || have.has(slot.effectId)) continue;
+        const def = sources.effects.find((effect) => effect.id === slot.effectId);
+        if (!def) continue;
+        have.add(def.id);
+        out.push(structuredClone(def));
+      }
+    }
+  }
+  return out;
+}
+
 /** The scene docs referenced across a set of graphs (deep-copied for the envelope). */
 function scenesForGraphs(
   graphs: Record<string, TriggerGraph>,
@@ -107,6 +128,17 @@ export interface GraphClipDoc {
   kind: 'graph';
   /** the graph is the payload; its effects/presets ride in {@link deps}. */
   payload: { key: string; graph: TriggerGraph; name?: string };
+  deps: ClipDocDeps;
+  meta: ClipDocMeta;
+}
+
+/** One node and the effects/presets/scenes it uses — what the inspector's Save node writes. Its
+    wires are not carried: they name nodes that only exist in the graph it came from. */
+export interface NodeClipDoc {
+  app: typeof CLIPDOC_APP;
+  v: typeof CLIPDOC_VERSION;
+  kind: 'node';
+  payload: { node: GraphNode };
   deps: ClipDocDeps;
   meta: ClipDocMeta;
 }
@@ -137,9 +169,9 @@ export interface PatchClipDoc {
   meta: ClipDocMeta;
 }
 
-export type ClipDoc = GraphClipDoc | SectionClipDoc | SongClipDoc | PatchClipDoc;
+export type ClipDoc = GraphClipDoc | NodeClipDoc | SectionClipDoc | SongClipDoc | PatchClipDoc;
 /** The authored kinds that carry a dependency closure and go through {@link remapClipDoc}. */
-export type AuthoredClipDoc = GraphClipDoc | SectionClipDoc | SongClipDoc;
+export type AuthoredClipDoc = GraphClipDoc | NodeClipDoc | SectionClipDoc | SongClipDoc;
 
 // ---- build (authored kinds) -------------------------------------------------
 
@@ -211,13 +243,30 @@ export function buildGraphClipDoc(key: string, sources: ClosureSources, over?: P
   const graph = raw.graphs[key] ?? { nodes: [], edges: [] };
   const payload: GraphClipDoc['payload'] = { key, graph };
   if (raw.graphNames[key] !== undefined) payload.name = raw.graphNames[key];
+  const effects = [...raw.effects, ...spliceSlotEffects(raw.graphs, sources, raw.effects)];
   return {
     app: CLIPDOC_APP,
     v: CLIPDOC_VERSION,
     kind: 'graph',
     payload,
-    deps: { effects: raw.effects, presets: raw.presets, canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes) },
+    deps: { effects, presets: raw.presets, canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes) },
     meta: meta(over),
+  };
+}
+
+/** Build a node ClipDoc: the node is the payload, the effects/presets/scenes it reaches the deps.
+    Rides the graph builder on a one-node graph, so a node's closure is extracted by exactly the
+    code a graph's is. */
+export function buildNodeClipDoc(node: GraphNode, sources: ClosureSources, over?: Partial<ClipDocMeta>): NodeClipDoc {
+  const key = `${CLIP_NS_ID}-node`;
+  const graphDoc = buildGraphClipDoc(key, { ...sources, graphs: { [key]: { nodes: [node], edges: [] } } }, over);
+  return {
+    app: CLIPDOC_APP,
+    v: CLIPDOC_VERSION,
+    kind: 'node',
+    payload: { node: graphDoc.payload.graph.nodes[0] ?? node },
+    deps: graphDoc.deps,
+    meta: graphDoc.meta,
   };
 }
 
@@ -233,7 +282,7 @@ export function buildSectionClipDoc(section: SetlistSection, sources: ClosureSou
     deps: {
       graphs: raw.graphs,
       graphNames: raw.graphNames,
-      effects: raw.effects,
+      effects: [...raw.effects, ...spliceSlotEffects(raw.graphs, sources, raw.effects)],
       presets: raw.presets,
       canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes),
     },
@@ -252,7 +301,7 @@ export function buildSongClipDoc(song: Song, sources: ClosureSources, over?: Par
     deps: {
       graphs: raw.graphs,
       graphNames: raw.graphNames,
-      effects: raw.effects,
+      effects: [...raw.effects, ...spliceSlotEffects(raw.graphs, sources, raw.effects)],
       presets: raw.presets,
       canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes),
     },
@@ -323,6 +372,8 @@ function coerceKind(kind: unknown, payload: Record<string, unknown>, deps: unkno
   switch (kind) {
     case 'graph':
       return coerceGraphDoc(payload, deps, m);
+    case 'node':
+      return coerceNodeDoc(payload, deps, m);
     case 'section':
       return coerceSectionDoc(payload, deps, m);
     case 'song':
@@ -345,6 +396,10 @@ function migrateClipDocHoopTargets(doc: ClipDoc): ClipDoc {
     : doc.deps;
   if (doc.kind === 'graph') {
     return { ...doc, payload: { ...doc.payload, graph: migrateGraphHoopTargets(doc.payload.graph) }, deps };
+  }
+  if (doc.kind === 'node') {
+    const node = migrateGraphHoopTargets({ nodes: [doc.payload.node], edges: [] }).nodes[0] ?? doc.payload.node;
+    return { ...doc, payload: { node }, deps };
   }
   return { ...doc, deps };
 }
@@ -375,6 +430,14 @@ function coerceGraphDoc(payload: Record<string, unknown>, deps: unknown, m: Clip
   const out: GraphClipDoc = { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'graph', payload: { key: payload.key, graph }, deps: coerceDeps(deps), meta: m };
   if (typeof payload.name === 'string') out.payload.name = payload.name;
   return out;
+}
+
+function coerceNodeDoc(payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): NodeClipDoc | ClipParseError {
+  const raw = payload.node;
+  if (!isObject(raw) || typeof raw.kind !== 'string' || typeof raw.id !== 'string') return err('malformed', 'Node payload missing kind/id.');
+  // `play` is the legacy Effect kind — hydrate renames it in a graph, so rename it here too.
+  const node = (raw.kind === 'play' ? { ...raw, kind: 'effect' } : raw) as unknown as GraphNode;
+  return { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'node', payload: { node }, deps: coerceDeps(deps), meta: m };
 }
 
 function coerceSectionDoc(payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): SectionClipDoc | ClipParseError {
@@ -492,7 +555,7 @@ export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | '
     the primary object with every ref rewritten to its final local id. The
     store (S44) unions the closure and inserts the primary; this function stays pure. */
 export interface RemapResult {
-  kind: 'graph' | 'section' | 'song';
+  kind: 'graph' | 'node' | 'section' | 'song';
   /** fresh graphs to add (key -> graph, refs already remapped). Every pasted graph is fresh. */
   graphs: Record<string, TriggerGraph>;
   graphNames: Record<string, string>;
@@ -504,6 +567,9 @@ export interface RemapResult {
   canvasScenes: CanvasScene[];
   /** kind 'graph': the fresh graph key to reference. */
   graphKey?: string;
+  /** kind 'node': the node with its effect/preset/scene refs rewritten (its id is the file's —
+      the caller mints or keeps a local one). */
+  node?: GraphNode;
   /** kind 'section': the fresh section with graph refs + looks remapped. */
   section?: SetlistSection;
   /** kind 'song': the fresh song with its sections remapped. */
@@ -609,6 +675,8 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
     out.graphKey = newKey;
     out.graphs[newKey] = remapped;
     if (doc.payload.name !== undefined) out.graphNames[newKey] = doc.payload.name;
+  } else if (doc.kind === 'node') {
+    out.node = remapGraph({ nodes: [doc.payload.node], edges: [] }, remapEffectRef, remapPresetRef, remapSceneRef).nodes[0];
   } else if (doc.kind === 'section') {
     if (doc.payload.section.graphs.some((key) => !graphMap.has(key))) {
       return err('unresolved-dependency', 'Section payload references a graph that is missing from its dependency closure.');
@@ -639,12 +707,21 @@ function remapGraph(
   remapSceneRef: (id: string) => string,
 ): TriggerGraph {
   return {
-    nodes: g.nodes.map((n) => remapCanvasNode(n, remapSceneRef) ?? {
+    nodes: g.nodes.map((n) => remapSpliceSlots(remapCanvasNode(n, remapSceneRef) ?? {
       ...n,
       effectId: n.effectId ? remapEffectRef(n.effectId) : n.effectId,
       presetId: n.presetId ? remapPresetRef(n.presetId) : n.presetId,
-    }),
+    }, remapEffectRef)),
     edges: g.edges.map((e) => ({ ...e })),
+  };
+}
+
+/** Point a Splice's slots at their effects' local ids (see {@link spliceSlotEffects}). */
+function remapSpliceSlots(node: GraphNode, remapEffectRef: (id: string) => string): GraphNode {
+  if (!node.splices?.some((slot) => slot.effectId && !slot.canvasScene)) return node;
+  return {
+    ...node,
+    splices: node.splices.map((slot) => (slot.effectId && !slot.canvasScene ? { ...slot, effectId: remapEffectRef(slot.effectId) } : slot)),
   };
 }
 

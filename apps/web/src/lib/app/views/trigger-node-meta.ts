@@ -28,6 +28,7 @@ import Music2 from '@lucide/svelte/icons/music-2';
 import RadioTower from '@lucide/svelte/icons/radio-tower';
 import { listModifiers, voice } from '@ledrums/core';
 import AudioLines from '@lucide/svelte/icons/audio-lines';
+import Rows3 from '@lucide/svelte/icons/rows-3';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 import { audioBandLabel } from '../../audio/band-labels';
 
@@ -37,6 +38,8 @@ export const kindIcon: Record<NodeKind, Component> = {
   play: Sparkles,
   effect: Sparkles,
   splice: PieChart,
+  // Stacked slabs — what a slice cuts the kit into, and visibly not Splice's pie wedges.
+  slice: Rows3,
   all: Layers,
   random: Shuffle,
   sequence: ListOrdered,
@@ -70,6 +73,7 @@ export const tint: Record<NodeKind, string> = {
   play: 'var(--role-content)',
   effect: 'var(--role-content)',
   splice: 'var(--role-content)',
+  slice: 'var(--role-content)',
   all: 'var(--role-layer)',
   random: 'var(--role-effect)',
   sequence: 'var(--role-output)',
@@ -96,6 +100,7 @@ export const kindLabel: Record<NodeKind, string> = {
   play: 'Play',
   effect: 'Effect',
   splice: 'Splice',
+  slice: 'Slice',
   all: 'All',
   random: 'Random',
   sequence: 'Sequence',
@@ -154,6 +159,19 @@ export function kindSummary(node: GraphNode): string {
       const rate = node.spliceRateMode === 'time' ? `${node.spliceRateMs ?? voice.DEFAULT_SPLICE_RATE_MS}ms` : node.spliceDivision ?? voice.DEFAULT_SPLICE_DIVISION;
       if (chase === 'stagger') return `${count} per ${per} · ${node.spliceIncrementPx ?? voice.DEFAULT_SPLICE_INCREMENT_PX}px / ${rate}`;
       return `${count} per ${per} · ${chase === 'smooth' ? 'spin' : 'chase'} ${rate}`;
+    }
+    // The slice counterpart: how finely, along which axis, over what, and whether it moves.
+    case 'slice': {
+      const count = node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT;
+      const axis = (node.sliceAxis ?? voice.DEFAULT_SLICE_AXIS).toUpperCase();
+      const tilted = !!(node.sliceRotX || node.sliceRotY || node.sliceRotZ);
+      const over = node.sliceRegion ? 'space' : node.scope === 'drum' ? 'drum' : 'kit';
+      const base = `${count} along ${axis}${tilted ? ' (tilted)' : ''} · ${over}`;
+      const chase = node.spliceChase ?? 'off';
+      if (chase === 'off') return base;
+      const rate = node.spliceRateMode === 'time' ? `${node.spliceRateMs ?? voice.DEFAULT_SPLICE_RATE_MS}ms` : node.spliceDivision ?? voice.DEFAULT_SPLICE_DIVISION;
+      if (chase === 'stagger') return `${base} · ${node.sliceIncrementPct ?? voice.DEFAULT_SLICE_INCREMENT_PCT}% / ${rate}`;
+      return `${base} · ${chase === 'smooth' ? 'sweep' : 'chase'} ${rate}`;
     }
     case 'scope':
       return node.scope === 'kit' ? 'whole kit' : node.targetId || node.scope;

@@ -25,9 +25,36 @@ export const SPLICE_CHASE_HINTS: Record<voice.SpliceChaseMode, string> = {
   stagger: 'The whole cut jumps by a set number of pixels each interval — the same movement as Spin, but landing on steps instead of gliding.',
 };
 
-export const SPLICE_RATE_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
-  { value: 'beats', label: 'Division' },
-  { value: 'time', label: 'Time' },
+/**
+ * Slice motion: the same four modes as a splice, named for what they do to SLABS. `smooth` is
+ * SWEEP rather than Spin — a splice's cut rotates round a circular hoop, but a slice's slabs travel
+ * along a straight axis, and "spin" would promise a rotation this node does not do.
+ */
+export const SLICE_CHASE_OPTS: Array<{ value: voice.SpliceChaseMode; label: string }> = [
+  { value: 'off', label: 'Off' },
+  { value: 'step', label: 'Chase' },
+  { value: 'smooth', label: 'Sweep' },
+  { value: 'stagger', label: 'Stagger' },
+];
+
+export const SLICE_CHASE_HINTS: Record<voice.SpliceChaseMode, string> = {
+  off: '',
+  step: 'Each slice hands its content to the next one, a slice per interval.',
+  smooth: 'The slices glide along the axis through the kit, one whole span per interval, wrapping round at the end.',
+  stagger: 'The slices jump along the axis by a set share of the span each interval — the same movement as Sweep, landing on steps instead of gliding.',
+};
+
+/** What a slice cuts. SPACE is a box of the room you place and size. */
+export const SLICE_ON_OPTS: Array<{ value: 'kit' | 'drum' | 'space'; label: string }> = [
+  { value: 'kit', label: 'Kit' },
+  { value: 'drum', label: 'Drum' },
+  { value: 'space', label: 'Space' },
+];
+
+export const SLICE_AXIS_OPTS: Array<{ value: voice.SliceAxis; label: string }> = [
+  { value: 'x', label: 'X' },
+  { value: 'y', label: 'Y' },
+  { value: 'z', label: 'Z' },
 ];
 
 export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
@@ -38,6 +65,55 @@ export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
 /** Sentinel for "no offset division". An empty string reads as UNSET to the Select, which then
     shows its placeholder instead of the option's own label. */
 export const SPLICE_NO_DIVISION = '@none';
+
+/**
+ * The Select value that stands for "free time in milliseconds" in a merged timing dropdown.
+ *
+ * Every splice timing used to be TWO controls — a Division | Time toggle, then a row that changed
+ * shape underneath it — repeated four times (rate, and the hoop, drum and colour chases). One
+ * dropdown carries both now: the musical divisions, then "Free (ms)", which reveals the
+ * millisecond field in place. Same two modes, same stored fields, one fewer row each.
+ */
+export const SPLICE_FREE_MS = '@ms';
+
+/** The stored fields behind one timing. Four timings share one shape — the motion rate and the
+    three chases — across both the Splice and Slice inspectors, so they are named once, here. */
+export interface SpliceTimingKeys {
+  mode: keyof GraphNode;
+  division: keyof GraphNode;
+  ms: keyof GraphNode;
+}
+export const SPLICE_RATE_KEYS: SpliceTimingKeys = { mode: 'spliceRateMode', division: 'spliceDivision', ms: 'spliceRateMs' };
+export const SPLICE_PRIMARY_KEYS: SpliceTimingKeys = { mode: 'spliceOffsetMode', division: 'spliceOffsetDivision', ms: 'spliceOffsetMs' };
+export const SPLICE_COLOUR_KEYS: SpliceTimingKeys = { mode: 'spliceColorOffsetMode', division: 'spliceColorOffsetDivision', ms: 'spliceColorOffsetMs' };
+export const SPLICE_DRUM_KEYS: SpliceTimingKeys = { mode: 'spliceDrumOffsetMode', division: 'spliceDrumOffsetDivision', ms: 'spliceDrumOffsetMs' };
+
+/** A merged timing dropdown's options: the given divisions, then the free-time entry. */
+export const spliceTimingOptions = (divisions: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> => [
+  ...divisions,
+  { value: SPLICE_FREE_MS, label: 'Free (ms)' },
+];
+
+/** The value a merged timing dropdown shows for a stored `(mode, division)` pair. */
+export function spliceTimingValue(mode: 'beats' | 'time' | undefined, division: string | undefined, fallback: string): string {
+  if (mode === 'time') return SPLICE_FREE_MS;
+  return division ?? fallback;
+}
+
+/**
+ * Translate a merged timing dropdown's choice back into the node's two stored fields.
+ *
+ * Picking a division also sets the mode back to `beats`, so leaving Free is one click rather
+ * than a trip to a separate toggle. The "none" sentinel stores `undefined`, exactly as the
+ * division Select it replaces did — so a show saved before this change reads back identically.
+ */
+export function spliceTimingPatch(
+  choice: string,
+  keys: { mode: string; division: string },
+): Record<string, 'beats' | 'time' | string | undefined> {
+  if (choice === SPLICE_FREE_MS) return { [keys.mode]: 'time' };
+  return { [keys.mode]: 'beats', [keys.division]: choice === SPLICE_NO_DIVISION ? undefined : choice };
+}
 
 /** Division options for a cascade offset, with an explicit "no offset" entry first. */
 export const spliceOffsetDivisionOptions = (divisions: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> => [
@@ -65,11 +141,6 @@ export const SPLICE_LOOP_RETRIGGER_HINTS: Record<'stop' | 'restart', string> = {
   restart: 'Hit again to re-sync the loop from the top, replacing the one already running.',
 };
 
-export const SPLICE_OFFSET_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
-  { value: 'beats', label: 'Division' },
-  { value: 'time', label: 'Time' },
-];
-
 /** The order the units start moving in when a cascade offset is set. */
 export const SPLICE_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string }> = [
   { value: 'up', label: 'Up' },
@@ -77,6 +148,72 @@ export const SPLICE_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string 
   { value: 'outside-in', label: 'Outside in' },
   { value: 'random', label: 'Random' },
 ];
+
+/**
+ * The order a splice's colours come on AROUND a hoop. The same four patterns as the drum and hoop
+ * orders, but Up and Down mean nothing on a circle, so they read Forward and Reverse — along the
+ * hoop's own pixel direction, which is why this says forward rather than clockwise: which way that
+ * is depends on how the hoop was wired.
+ */
+export const SPLICE_AROUND_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string }> = [
+  { value: 'up', label: 'Forward' },
+  { value: 'down', label: 'Reverse' },
+  { value: 'outside-in', label: 'Outside in' },
+  { value: 'random', label: 'Random' },
+];
+
+/**
+ * MOVE THROUGH's three layers, and which stored fields each one edits. The engine keeps its
+ * original axes — a primary cascade across the cut's units, a drum cascade, a colour cascade — so
+ * existing shows read back unchanged; this is only the map from "where the light is sent" to those.
+ *
+ * THROUGH KIT is drum to drum. On a hoop cut that is the separate DRUM axis; on a drum cut the drums
+ * ARE the units, so it is the primary axis. THROUGH DRUM is hoop to hoop, which only a hoop cut has.
+ * AROUND is splice to splice within each unit, on any cut.
+ */
+export interface ThroughLayer {
+  keys: SpliceTimingKeys;
+  /** The pattern field the preset buttons set (and a dragged sequence overrides). */
+  pattern: 'spliceOrder' | 'spliceDrumOrder' | 'spliceColorOrder';
+  /** The dragged-sequence field, or null for a layer ordered by pattern alone. */
+  sequence: 'spliceDrumSequence' | 'spliceHoopSequence' | null;
+}
+
+export function throughKitLayer(partition: voice.SplicePartition | undefined): ThroughLayer {
+  return (partition ?? 'hoop') === 'drum'
+    ? { keys: SPLICE_PRIMARY_KEYS, pattern: 'spliceOrder', sequence: 'spliceDrumSequence' }
+    : { keys: SPLICE_DRUM_KEYS, pattern: 'spliceDrumOrder', sequence: 'spliceDrumSequence' };
+}
+export const THROUGH_DRUM_LAYER: ThroughLayer = { keys: SPLICE_PRIMARY_KEYS, pattern: 'spliceOrder', sequence: 'spliceHoopSequence' };
+export const AROUND_LAYER: ThroughLayer = { keys: SPLICE_COLOUR_KEYS, pattern: 'spliceColorOrder', sequence: null };
+
+/** The AROUND row's label: the unit the splices go round. A scope cut is one run the splices lie along. */
+export function aroundLabel(partition: voice.SplicePartition | undefined): string {
+  const p = partition ?? 'hoop';
+  return p === 'drum' ? 'AROUND DRUM' : p === 'scope' ? 'ALONG THE CUT' : 'AROUND HOOP';
+}
+
+/** Whether a layer is sending light anywhere — a division chosen, or a free time above zero. The
+    Order row appears only then: an order for a layer that is off is a control that does nothing. */
+export function layerActive(node: GraphNode, keys: SpliceTimingKeys): boolean {
+  if (node[keys.mode] === 'time') return ((node[keys.ms] as number | undefined) ?? 0) > 0;
+  return typeof node[keys.division] === 'string' && (node[keys.division] as string).length > 0;
+}
+
+/**
+ * The ids in the order they will fire: a dragged sequence (completed — unknown ids dropped, missing
+ * ones appended, exactly as the engine ranks them), else the pattern's own order. What the chips
+ * show, so the inspector always reads the way the lights will come on.
+ */
+export function effectiveOrder(ids: readonly string[], sequence: readonly string[] | undefined, pattern: voice.SpliceOrder, seed: number): string[] {
+  if (sequence && sequence.length) {
+    const ranks = voice.sequenceRanks(ids, sequence);
+    const out = new Array<string>(ids.length);
+    ids.forEach((id, i) => (out[ranks[i]!] = id));
+    return out;
+  }
+  return voice.orderedByPattern(ids.length, pattern, seed).map((i) => ids[i]!);
+}
 
 export const SPLICE_MOTION_MODE_OPTS: Array<{ value: voice.SpliceMotionMode; label: string }> = [
   { value: 'restart', label: 'Restart' },

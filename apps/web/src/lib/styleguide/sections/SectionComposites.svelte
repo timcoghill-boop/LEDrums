@@ -103,6 +103,7 @@
     play: 'Soft strike',
     effect: 'Soft strike',
     splice: '4 per hoop · chase 1/8',
+    slice: '4 along X · kit · sweep 1/8',
     all: 'all at once',
     random: 'no-repeat',
     sequence: 'in order',

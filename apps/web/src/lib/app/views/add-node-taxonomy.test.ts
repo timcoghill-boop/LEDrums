@@ -17,6 +17,7 @@ describe('ADD_NODE_TYPES', () => {
       'Mix',
       'Scope',
       'Splice',
+      'Slice',
       'Modulate',
     ]);
   });
@@ -35,6 +36,7 @@ describe('ADD_NODE_TYPES', () => {
       'mix',
       'scope',
       'splice',
+      'slice',
       'envelope',
     ]);
   });

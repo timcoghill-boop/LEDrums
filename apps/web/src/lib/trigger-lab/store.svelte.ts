@@ -140,6 +140,7 @@ import * as songRefsLib from './store/song-library-refs';
 import { extractSongClosure, type ClosureSources } from './store/song-library';
 import {
   buildGraphClipDoc,
+  buildNodeClipDoc,
   buildSectionClipDoc,
   buildSongClipDoc,
   serialize,
@@ -154,6 +155,7 @@ import {
   type RemapResult,
 } from './clipdoc';
 import { readClipboardText, writeClipboardText } from './clipboard-io';
+import { openTextFile, safeFileName, saveTextFile, type OpenOutcome, type SaveOutcome } from './file-io';
 import { pushToast } from '../ui/toast.svelte';
 import { bindingRejectionMessage } from '../app/binding-claim-label';
 import { EngineLinkSync } from './store/transport';
@@ -361,11 +363,42 @@ function* remapResultIds(res: RemapResult): Iterable<string> {
   }
 }
 
+/** The outcome of applying a graph/node FILE — the caller toasts `message`. `graphKey` is the graph
+    now holding the content; `nodeId` the node that now holds it (a new one when the file's kind
+    differed from the target's, so the inspector can move its selection there). */
+export type FileLoadResult =
+  | { ok: true; message: string; graphKey?: string; nodeId?: string }
+  | { ok: false; message: string };
+
+/** Graph files and node files end in their own double extension, so a folder of them reads at a
+    glance and the Open panel's `.json` filter still shows them. */
+export const GRAPH_FILE_EXT = '.ledrums-graph.json';
+export const NODE_FILE_EXT = '.ledrums-node.json';
+
+/** A parse failure, worded for a file the user picked rather than for the clipboard. */
+function friendlyFileMessage(reason: ClipParseReason): string {
+  switch (reason) {
+    case 'foreign':
+      return 'That file isn’t a LEDrums file.';
+    case 'unsupported-version':
+      return 'That file was saved by a newer version of LEDrums.';
+    default:
+      return 'That file couldn’t be read as a LEDrums graph or node.';
+  }
+}
+
+/** A file's own name minus its LEDrums/JSON extension — the fallback name for a loaded graph. */
+function fileStem(name: string): string {
+  return name.replace(/\.ledrums-(graph|node)\.json$/i, '').replace(/\.json$/i, '').trim();
+}
+
 /** The success message for a materialized authored paste. */
 function pasteSuccessMessage(res: RemapResult): string {
   switch (res.kind) {
     case 'graph':
       return 'Pasted graph.';
+    case 'node':
+      return 'Pasted node.';
     case 'section':
       return 'Pasted section.';
     case 'song':
@@ -3257,9 +3290,7 @@ export class TriggerLab {
     reserveIds(remapResultIds(res));
     if (Object.keys(res.graphs).length > 0) this.graphs = { ...this.graphs, ...res.graphs };
     if (Object.keys(res.graphNames).length > 0) this.graphNames = { ...this.graphNames, ...res.graphNames };
-    if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
-    if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
-    if (res.canvasScenes.length > 0) this.canvasScenes = [...this.canvasScenes, ...res.canvasScenes];
+    this.unionRemapDeps(res);
     if (res.kind === 'graph' && res.graphKey) {
       this.selectedPadKey = res.graphKey;
     } else if (res.kind === 'section' && res.section) {
@@ -3269,6 +3300,170 @@ export class TriggerLab {
       this.songs = [...this.songs, song];
       this.activeSongId = song.id;
     }
+  }
+
+  /** Add a materialized closure's fresh effects / presets / canvas scenes (reused and built-in
+      deps are absent from `res`, so nothing is duplicated). */
+  private unionRemapDeps(res: RemapResult): void {
+    if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
+    if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
+    if (res.canvasScenes.length > 0) this.canvasScenes = [...this.canvasScenes, ...res.canvasScenes];
+  }
+
+  // --- save / load to a file ---------------------------------------------------------------
+  // The file is the SAME ClipDoc JSON the clipboard carries (pretty-printed), so a saved graph
+  // can also be pasted and a copied one saved: one format, two transports. Load goes through the
+  // same remap as paste — every id is re-keyed against this show, built-in effects keep their
+  // ids, identical custom effects are reused rather than duplicated. The `apply…File` methods are
+  // the IO-free heart (text in, result out) so they are unit-testable; the `…FromFile` wrappers add
+  // the file panel and the toast.
+
+  /** Save a graph (by key) and the effects/presets/scenes it uses to a file the user picks. */
+  async saveGraphToFile(key: string): Promise<SaveOutcome | null> {
+    if (!this.resolvedView.graphs[key]) return null;
+    const label = this.graphLabel(key);
+    const doc = buildGraphClipDoc(key, this.clipSources(), this.clipMeta());
+    return this.writeFile(JSON.stringify(doc, null, 2), `${safeFileName(label, 'graph')}${GRAPH_FILE_EXT}`, `Saved “${label}”.`);
+  }
+
+  /** Save one node and what it uses to a file. `label` names the file (the inspector passes the
+      node's effect or kind name). The trigger and output anchors are not nodes you can move
+      between graphs, so they don't save. */
+  async saveNodeToFile(node: GraphNode, label: string): Promise<SaveOutcome | null> {
+    if (isAnchorNode(node)) return null;
+    const doc = buildNodeClipDoc($state.snapshot(node) as GraphNode, this.clipSources(), this.clipMeta());
+    return this.writeFile(JSON.stringify(doc, null, 2), `${safeFileName(label, 'node')}${NODE_FILE_EXT}`, `Saved the ${label} node.`);
+  }
+
+  private async writeFile(text: string, fileName: string, okMessage: string): Promise<SaveOutcome> {
+    const generation = this.documentGeneration;
+    const outcome = await saveTextFile(fileName, text);
+    if (generation !== this.documentGeneration) return outcome;
+    if (outcome === 'saved') pushToast(okMessage, { tone: 'success' });
+    else if (outcome === 'failed') pushToast('Couldn’t save the file.', { tone: 'error' });
+    return outcome;
+  }
+
+  /** Ask for a file, then hand its text to `apply` and toast the result. Guards against the show
+      being replaced while the panel was open. */
+  private async readFileThen(apply: (text: string, name: string) => FileLoadResult): Promise<FileLoadResult | null> {
+    const generation = this.documentGeneration;
+    const opened: OpenOutcome = await openTextFile();
+    if (generation !== this.documentGeneration || opened === 'cancelled') return null;
+    const result: FileLoadResult = opened === 'failed' ? { ok: false, message: 'Couldn’t read that file.' } : apply(opened.text, opened.name);
+    pushToast(result.message, { tone: result.ok ? 'success' : 'error' });
+    return result;
+  }
+
+  /** Parse file text as one kind of ClipDoc, remapped against this show. */
+  private remapFile(text: string, want: 'graph' | 'node'): RemapResult | { error: string } {
+    const doc = parse(text);
+    if (isClipParseError(doc)) return { error: friendlyFileMessage(doc.reason) };
+    if (doc.kind !== want) {
+      const where = doc.kind === 'node' ? 'load it from a node’s inspector' : doc.kind === 'graph' ? 'load it from a graph’s right-click menu' : 'paste it instead';
+      return { error: `That file holds a ${doc.kind}, not a ${want} — ${where}.` };
+    }
+    const res = remapClipDoc(doc, this.remapCtx());
+    return isClipParseError(res) ? { error: friendlyFileMessage(res.reason) } : res;
+  }
+
+  /**
+   * Replace a graph's contents with a graph file — one undo step. The graph keeps its key, its
+   * name and every section it is placed in (a linked graph changes everywhere, as any edit does).
+   * It also keeps the pad it fires from when it has one: the file's trigger is only used when
+   * this graph's trigger is unassigned, so loading a look onto the snare graph doesn't retarget
+   * it to the kick the file was saved from.
+   */
+  applyGraphFileTo(key: string, text: string): FileLoadResult {
+    if (!this.canMutateGraph(key)) return { ok: false, message: this.isViewer ? 'This show is read-only.' : 'This graph is a read-only library reference.' };
+    const res = this.remapFile(text, 'graph');
+    if ('error' in res) return { ok: false, message: res.error };
+    const graph = res.graphKey ? res.graphs[res.graphKey] : undefined;
+    if (!graph) return { ok: false, message: friendlyFileMessage('malformed') };
+    const current = this.graphs[key]?.nodes.find((node) => node.kind === 'trigger');
+    const incoming = graph.nodes.find((node) => node.kind === 'trigger');
+    if (current?.source && incoming) incoming.source = structuredClone($state.snapshot(current.source));
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      reserveIds(remapResultIds(res));
+      this.unionRemapDeps(res);
+      this.graphs = { ...this.graphs, [key]: graph };
+    });
+    return { ok: true, message: `Loaded into “${this.graphLabel(key)}”.`, graphKey: key };
+  }
+
+  /** Add a graph file to a section of the active song as a NEW graph — one undo step. It is named
+      from the file (its saved name, else the file name) and takes the file's trigger as-is. */
+  applyGraphFileToSection(sectionId: string, text: string, fileName = ''): FileLoadResult {
+    if (!this.canEditActiveSong) return { ok: false, message: this.activeSongEditBlockReason ?? 'This song is read-only.' };
+    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
+    if (!song?.sections.some((section) => section.id === sectionId)) return { ok: false, message: 'That section is gone.' };
+    const res = this.remapFile(text, 'graph');
+    if ('error' in res) return { ok: false, message: res.error };
+    const key = res.graphKey;
+    const graph = key ? res.graphs[key] : undefined;
+    if (!key || !graph) return { ok: false, message: friendlyFileMessage('malformed') };
+    const name = res.graphNames[key]?.trim() || fileStem(fileName) || graphsLib.nextGraphName(this.graphNames);
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      reserveIds(remapResultIds(res));
+      this.unionRemapDeps(res);
+      this.graphs = { ...this.graphs, [key]: graph };
+      this.graphNames = { ...this.graphNames, [key]: name };
+      this.songs = this.songs.map((candidate) => (candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate));
+      this.selectedPadKey = key;
+    });
+    return { ok: true, message: `Loaded “${name}”.`, graphKey: key };
+  }
+
+  /**
+   * Load a node file onto a node of the selected graph — one undo step. A file of the SAME kind
+   * replaces the node's settings in place: it keeps its id, its position and its wires. A file of
+   * a DIFFERENT kind would leave those wires meaningless, so it is added beside the node instead
+   * (unwired) and the result names the new node.
+   */
+  applyNodeFileTo(target: GraphNode, text: string): FileLoadResult {
+    const g = this.selectedGraph;
+    if (!g || !this.canMutateNode(target) || isAnchorNode(target)) return { ok: false, message: 'This node can’t be changed.' };
+    const res = this.remapFile(text, 'node');
+    if ('error' in res) return { ok: false, message: res.error };
+    const loaded = res.node;
+    if (!loaded || isAnchorNode(loaded)) return { ok: false, message: 'That file holds a graph anchor, which can’t be loaded as a node.' };
+    const sameKind = loaded.kind === target.kind || (isEffectNode(loaded) && isEffectNode(target));
+    this.pushUndoSnapshot();
+    let nodeId = target.id;
+    this.batchIntoCurrentUndo(() => {
+      reserveIds(remapResultIds(res));
+      this.unionRemapDeps(res);
+      if (sameKind) {
+        const next: GraphNode = { ...loaded, id: target.id, x: target.x, y: target.y };
+        g.nodes = g.nodes.map((node) => (node.id === target.id ? next : node));
+        if (this.settingsBlock?.id === target.id) this.settingsBlock = null;
+        if (this.galleryBlock?.id === target.id) this.galleryBlock = null;
+        if (this.envTarget?.block.id === target.id) this.envTarget = null;
+      } else {
+        nodeId = this.placeClone(loaded, target.x + 36, target.y + 36)?.id ?? '';
+      }
+    });
+    if (!nodeId) return { ok: false, message: 'There was no room to add the node.' };
+    return sameKind
+      ? { ok: true, message: 'Loaded the node’s settings.', nodeId }
+      : { ok: true, message: `That file holds a different kind of node, so it was added beside this one.`, nodeId };
+  }
+
+  /** Right-click → Load into graph: pick a graph file and replace this graph's contents. */
+  loadGraphFromFile(key: string): Promise<FileLoadResult | null> {
+    return this.readFileThen((text) => this.applyGraphFileTo(key, text));
+  }
+
+  /** Pick a graph file and add it to a section as a new graph. */
+  loadGraphFileIntoSection(sectionId: string): Promise<FileLoadResult | null> {
+    return this.readFileThen((text, name) => this.applyGraphFileToSection(sectionId, text, name));
+  }
+
+  /** Inspector → Load: pick a node file and load it onto (or beside) `target`. */
+  loadNodeFromFile(target: GraphNode): Promise<FileLoadResult | null> {
+    return this.readFileThen((text) => this.applyNodeFileTo(target, text));
   }
 
   /**
@@ -3312,7 +3507,7 @@ export class TriggerLab {
     if (isClipParseError(res)) return { ok: false, message: friendlyParseMessage(res.reason) };
     this.pushUndoSnapshot();
     this.batchIntoCurrentUndo(() => this.applyRemapResult(res));
-    return { ok: true, kind: res.kind, message: pasteSuccessMessage(res) };
+    return { ok: true, kind: opts.context, message: pasteSuccessMessage(res) };
   }
 
   /** Toast the outcome of a paste. */
@@ -3633,6 +3828,9 @@ export class TriggerLab {
       // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
       // splice node renders nothing at all (every slot blank), which would read as broken.
       node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit(this.buses));
+    } else if (kind === 'slice') {
+      // Same reasoning as the splice seed: four colour slabs, so a fresh Slice lights at once.
+      node = makeNode('slice', nodeId, x, y, graphsLib.sliceNodeInit(this.buses));
     } else if (kind === 'randomMod') {
       node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
@@ -3643,7 +3841,7 @@ export class TriggerLab {
     // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
     // both), announced with a toast. Only the light-making Effect node auto-wires.
     // A Splice makes light of its own, so it auto-wires for the same reason an Effect does.
-    if (node.kind === 'effect' || node.kind === 'splice') this.autoWireEffectToOutput(node);
+    if (node.kind === 'effect' || voice.isSpliceLike(node.kind)) this.autoWireEffectToOutput(node);
     return node;
   }
 
@@ -3659,7 +3857,7 @@ export class TriggerLab {
     if (!output) return;
     const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
     if (rejection === null) {
-      pushToast(`${node.kind === 'splice' ? 'Splice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
+      pushToast(`${node.kind === 'splice' ? 'Splice' : node.kind === 'slice' ? 'Slice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
     }
   }
 
@@ -3895,6 +4093,11 @@ export class TriggerLab {
       node.randomDistribution = 'linear';
       node.randomSteps = 4;
       if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'slice' && node.scope === 'hoop') {
+      // Slice's On control offers Kit / Drum / Space only, and would read a kept hoop scope as Kit
+      // while it still cut one hoop — with no click able to fix it.
+      node.scope = 'kit';
+      node.targetId = undefined;
     }
   }
 
@@ -3905,7 +4108,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (!this.canEditSelectedGraph) return;
-    if ((node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice') || node.mode === mode) return;
+    if ((node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind)) || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }
@@ -3914,7 +4117,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind) && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -3924,7 +4127,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind) && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }
@@ -4027,14 +4230,45 @@ export class TriggerLab {
   // fifteen near-identical setters would be noise, and every one of them would repeat the same
   // viewer guard, kind guard and undo checkpoint. The guards live here once instead.
 
+  /**
+   * What a Slice cuts: the whole kit, one drum, or a box of space. SPACE is the kit scope plus a
+   * region, so it needs no new scope value threaded through every scope consumer — and switching
+   * is ONE undo step rather than a scope change and a region change the author has to undo twice.
+   * A fresh region starts as the kit's own bounds, so choosing SPACE changes nothing visible until
+   * the box is moved or shrunk; that is the least surprising first frame.
+   */
+  setSliceOn(node: GraphNode, on: 'kit' | 'drum' | 'space'): void {
+    if (!this.canEditSelectedGraph || node.kind !== 'slice') return;
+    const current = node.sliceRegion ? 'space' : node.scope === 'drum' ? 'drum' : 'kit';
+    if (current === on) return;
+    this.pushUndoSnapshot();
+    if (on === 'space') {
+      const { min, max } = this.labModel.pm.bounds;
+      node.scope = 'kit';
+      node.targetId = undefined;
+      node.sliceRegion = {
+        cx: Math.round((min.x + max.x) / 2),
+        cy: Math.round((min.y + max.y) / 2),
+        cz: Math.round((min.z + max.z) / 2),
+        sx: Math.max(1, Math.round(max.x - min.x)),
+        sy: Math.max(1, Math.round(max.y - min.y)),
+        sz: Math.max(1, Math.round(max.z - min.z)),
+      };
+      return;
+    }
+    node.sliceRegion = undefined;
+    node.scope = on;
+    if (on === 'kit') node.targetId = undefined;
+  }
+
   /** Patch a splice node's own settings (count excepted — see {@link setSpliceCount}, which also
-      keeps the authored rows in step). Guards `node.kind === 'splice'`. */
+      keeps the authored rows in step). Guards `voice.isSpliceLike` (Splice and Slice). */
   setSpliceSetting(
     node: GraphNode,
-    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint'>>,
+    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint' | 'sliceAxis' | 'sliceRotX' | 'sliceRotY' | 'sliceRotZ' | 'sliceRegion' | 'sliceVelocity' | 'sliceIncrementPct' | 'spliceDrumSequence' | 'spliceHoopSequence'>>,
   ): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     this.pushUndoSnapshot();
     Object.assign(node, patch);
   }
@@ -4045,7 +4279,7 @@ export class TriggerLab {
       Shrinking keeps the trimmed rows out of the way but does not destroy the leading ones. */
   setSpliceCount(node: GraphNode, count: number): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     const next = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, Math.round(count)));
     if (next === (node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT)) return;
     this.pushUndoSnapshot();
@@ -4059,10 +4293,10 @@ export class TriggerLab {
 
   /** Patch ONE splice row — its colour (`null` clears it), effect (`null` clears it) or mute.
       Pads the authored rows out to `index` so the inspector can edit a slot that is currently
-      being filled by the cycling fallback. Guards `node.kind === 'splice'`. */
+      being filled by the cycling fallback. Guards `voice.isSpliceLike` (Splice and Slice). */
   setSpliceAt(node: GraphNode, index: number, patch: Partial<voice.SpliceDef>): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice' || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
+    if (!voice.isSpliceLike(node.kind) || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
     this.pushUndoSnapshot();
     const rows = [...(node.splices ?? [])];
     while (rows.length <= index) rows.push({});
@@ -4073,7 +4307,7 @@ export class TriggerLab {
   /** Append a splice, keeping the band count in step with the authored rows. */
   addSplice(node: GraphNode): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     const rows = node.splices ?? [];
     if (rows.length >= voice.MAX_SPLICE_COUNT) return;
     this.pushUndoSnapshot();
@@ -4085,7 +4319,7 @@ export class TriggerLab {
       node with no splices renders nothing, which is a deletion, not an edit. */
   removeSplice(node: GraphNode, index: number): void {
     if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'splice') return;
+    if (!voice.isSpliceLike(node.kind)) return;
     const rows = node.splices ?? [];
     if (index < 0 || index >= rows.length || rows.length <= 1) return;
     this.pushUndoSnapshot();
@@ -4466,7 +4700,7 @@ export class TriggerLab {
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
     if (!this.canEditSelectedGraph) return;
-    if ((!isEffectNode(node) && node.kind !== 'splice') || node.busId === busId) return;
+    if ((!isEffectNode(node) && !voice.isSpliceLike(node.kind)) || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
   }
@@ -4474,7 +4708,7 @@ export class TriggerLab {
   busOf(node: GraphNode): string {
     // `splice` is a layer-producing node too — but deliberately NOT folded into `isEffectNode`,
     // which also gates the gallery / preset / effect-param paths a splice has no business in.
-    if (!isEffectNode(node) && node.kind !== 'splice') return '';
+    if (!isEffectNode(node) && !voice.isSpliceLike(node.kind)) return '';
     return node.busId || this.effectOf(node)?.busId || '';
   }
 

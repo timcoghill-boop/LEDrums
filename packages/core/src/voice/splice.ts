@@ -318,6 +318,85 @@ export function spliceOrderIndex(ordinal: number, count: number, order: SpliceOr
 }
 
 /**
+ * Firing rank of every item under an explicit sequence — THROUGH KIT's or THROUGH DRUM's dragged
+ * order. `ids` are the items in their natural (model) order; the result gives each one's rank.
+ *
+ * Always a PERMUTATION of 0..n−1, whatever the sequence holds: the ids it names come first in its
+ * order, with unknown and repeated ids dropped, then every id it left out, in model order. That is
+ * what keeps a stale sequence safe — a drum removed from the kit is simply skipped, a drum added
+ * later joins at the end — and why the cascade can never outgrow the pattern's own length.
+ */
+export function sequenceRanks(ids: readonly string[], sequence: readonly string[]): number[] {
+  const ranks = new Array<number>(ids.length).fill(-1);
+  const where = new Map<string, number>();
+  ids.forEach((id, i) => where.set(id, i));
+  let next = 0;
+  for (const id of sequence) {
+    const i = where.get(id);
+    if (i === undefined || ranks[i] !== -1) continue;
+    ranks[i] = next++;
+  }
+  for (let i = 0; i < ids.length; i++) if (ranks[i] === -1) ranks[i] = next++;
+  return ranks;
+}
+
+/**
+ * The ordinals of `count` items in the order a pattern fires them — the inverse of
+ * {@link spliceOrderIndex}. What the inspector shows as the starting sequence before the author
+ * drags anything, so the chips always read in the order the lights will actually come on.
+ */
+export function orderedByPattern(count: number, order: SpliceOrder, seed: number): number[] {
+  const n = Math.max(0, Math.floor(count));
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i++) out[spliceOrderIndex(i, n, order, seed)] = i;
+  return out;
+}
+
+/**
+ * The drum ranks a dragged drum sequence gives, in model order — or null when there is no sequence,
+ * which is the common case and costs nothing. Built with a plain loop, not `drums.map`: this runs on
+ * the render path's layout build, where the allocation guard in `splice-material-regeneration.test`
+ * forbids exactly that call.
+ */
+export function spliceDrumRanks(model: PixelModel, cfg: SpliceConfig): number[] | null {
+  if (!cfg.drumSequence) return null;
+  const ids: string[] = [];
+  for (const drum of model.drums) ids.push(drum.drumId);
+  return sequenceRanks(ids, cfg.drumSequence);
+}
+
+/**
+ * Where one partition unit sits in both cascades: its place on the primary axis, and its drum's
+ * place on the drum axis. An explicit sequence replaces the matching pattern — the drum sequence on
+ * the drum axis, and on the primary axis too for a drum cut (where the drums ARE the primary axis);
+ * the hoop sequence on the primary axis of a hoop cut. `drumRanks` comes from
+ * {@link spliceDrumRanks}, computed once per layout rather than once per unit.
+ */
+export function spliceUnitOrder(
+  unit: SplicePartitionUnit,
+  cfg: SpliceConfig,
+  drumRanks: readonly number[] | null,
+): { orderIndex: number; drumOrderIndex: number } {
+  const drumOrderIndex = drumRanks
+    ? drumRanks[unit.drumOrdinal] ?? unit.drumOrdinal
+    : spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed);
+
+  let orderIndex: number;
+  if (cfg.partition === 'drum' && drumRanks) {
+    orderIndex = drumRanks[unit.ordinal] ?? unit.ordinal;
+  } else if (cfg.partition === 'hoop' && cfg.hoopSequence) {
+    const hoops: string[] = [];
+    for (let h = 1; h <= unit.ordinalCount; h++) hoops.push(String(h));
+    const seq: string[] = [];
+    for (const h of cfg.hoopSequence) seq.push(String(h));
+    orderIndex = sequenceRanks(hoops, seq)[unit.ordinal] ?? unit.ordinal;
+  } else {
+    orderIndex = spliceOrderIndex(unit.ordinal, unit.ordinalCount, cfg.order, cfg.seed);
+  }
+  return { orderIndex, drumOrderIndex };
+}
+
+/**
  * A unit's own motion clock: the shared clock minus its place in the cascade. Clamped at 0, so a
  * unit whose turn has not come shows the cut STANDING STILL rather than going dark — the splice
  * colours are already lit; only the movement is waiting.
@@ -340,6 +419,13 @@ export function unitMotionAge(ageMs: number, delayMs: number): number {
 export function maxCascadeDelayMs(model: PixelModel, cfg: SpliceConfig): number {
   // The colour axis applies even under the `scope` partition, where there is only one unit.
   const colour = Math.max(0, (cfg.count - 1) * cfg.colorOffsetMs);
+  // A SLICE cascades across its slabs (the primary axis) and across drums, with no partition —
+  // so it takes neither branch below. Kept here rather than in `slice.ts` so the engine, the
+  // compositor and the web preview all ask ONE function how long a cascade lasts.
+  if (cfg.space) {
+    const drums = Math.max(1, model.drums.length);
+    return Math.max(0, (cfg.count - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs) + colour;
+  }
   if (cfg.partition === 'scope' || model.drums.length === 0) return colour;
   const drums = model.drums.length;
   let maximum = 0;
@@ -592,6 +678,21 @@ export interface ResolvedSplices {
   envelope: { attackMs: number; sustainMs: number; releaseMs: number };
 }
 
+/** A drum sequence worth carrying: non-empty strings only, or nothing at all. Absent and empty both
+    mean "use the pattern", so neither reaches the compositor as a sequence. */
+function sanitiseDrumSequence(seq: readonly unknown[] | undefined): string[] | undefined {
+  if (!Array.isArray(seq)) return undefined;
+  const ids = seq.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return ids.length ? ids : undefined;
+}
+
+/** A hoop sequence worth carrying: positive whole hoop numbers only, or nothing at all. */
+function sanitiseHoopSequence(seq: readonly unknown[] | undefined): number[] | undefined {
+  if (!Array.isArray(seq)) return undefined;
+  const hoops = seq.filter((h): h is number => typeof h === 'number' && Number.isInteger(h) && h >= 1);
+  return hoops.length ? hoops : undefined;
+}
+
 /**
  * Resolve a `splice` node into the layout the compositor consumes plus the members that
  * actually render. Returns `null` when every slot is blank — a splice node with nothing
@@ -690,6 +791,8 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
       // through would delay every unit twice over.
       drumOffsetMs: (node.splicePartition ?? 'hoop') === 'hoop' ? drumOffsetMs : 0,
       drumOrder: node.spliceDrumOrder ?? 'up',
+      drumSequence: sanitiseDrumSequence(node.spliceDrumSequence),
+      hoopSequence: sanitiseHoopSequence(node.spliceHoopSequence),
       colorOffsetMs,
       colorOrder: node.spliceColorOrder ?? 'up',
       // Wrapped, not clamped: 370° is 10°, and a negative rotation reads backwards.

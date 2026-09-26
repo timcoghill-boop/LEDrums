@@ -19,6 +19,7 @@
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
 
   let {
     store,
@@ -79,6 +80,16 @@
     dismiss();
   }
 
+  /** Load a saved graph file into the section as a new graph. The file panel is async; the dialog
+      stays open behind it so a cancel lands back here, not on the canvas. */
+  async function fromFile(): Promise<void> {
+    if (!section || !canPlace) return;
+    const result = await store.loadGraphFileIntoSection(section.id);
+    if (!result?.ok || !result.graphKey) return;
+    onAdded(result.graphKey);
+    dismiss();
+  }
+
   function commitNew(name: string): void {
     if (!section || !canPlace) return;
     const key = store.createGraphInSection(section.id, name);
@@ -113,6 +124,10 @@
       <button type="button" class="ag-new" disabled={!canPlace} title={blockReason} onclick={() => ((naming = true), (copying = null))}>
         <Plus size={14} aria-hidden="true" />
         New graph
+      </button>
+      <button type="button" class="ag-new" disabled={!canPlace} title={canPlace ? 'Load a saved graph file' : blockReason} onclick={() => void fromFile()}>
+        <FolderOpen size={14} aria-hidden="true" />
+        From file…
       </button>
     {/if}
   </div>

@@ -1,4 +1,5 @@
 import type { AudioBand } from './audio-features';
+import type { Vec3 } from '../math';
 import type { GeometryState } from './geometry-state';
 /**
  * Pure data model for the trigger-graph / voice-bus lighting brain (ported from the
@@ -204,6 +205,7 @@ export type CanonicalGraphNodeKind =
   | 'trigger'
   | 'effect'
   | 'splice'
+  | 'slice'
   | 'all'
   | 'random'
   | 'sequence'
@@ -223,7 +225,16 @@ export type CanonicalGraphNodeKind =
   | 'audio'
   | 'randomMod';
 
-export type BlockKind = LegacyGraphNodeKind | 'effect' | 'splice' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
+/**
+ * The two nodes that cut a layer into bands of their own content — Splice (round the hoops) and
+ * Slice (through space). They share every field and store action but their geometry, so a guard
+ * that means "a splice-shaped node" must admit both. Asking this, rather than listing kinds at
+ * each guard, is what stops a new sibling from falling silently through a store action — which
+ * happened to Splice three separate times (scope, layer, play mode).
+ */
+export const isSpliceLike = (kind: NodeKind): kind is 'splice' | 'slice' => kind === 'splice' || kind === 'slice';
+
+export type BlockKind = LegacyGraphNodeKind | 'effect' | 'splice' | 'slice' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
 /**
  * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
  * fires children). It is a media-effects node wired to a play node's `mod` input handle;
@@ -370,6 +381,16 @@ export interface SpliceConfig {
   drumOffsetMs: number;
   /** The order drums start moving in when {@link drumOffsetMs} is non-zero. */
   drumOrder: SpliceOrder;
+  /**
+   * An explicit drum firing order, by drum id — THROUGH KIT's dragged sequence. When present it
+   * replaces the drum pattern ({@link drumOrder} on a hoop cut, {@link order} on a drum cut, where
+   * the drums ARE the primary axis). Drums it does not name follow in model order, so it is always
+   * a permutation and the cascade is never longer than the pattern's.
+   */
+  drumSequence?: string[];
+  /** An explicit hoop firing order, 1-based — THROUGH DRUM's dragged sequence. Replaces
+      {@link order} on a hoop cut; hoops it does not name follow in hoop order. */
+  hoopSequence?: number[];
   /** Milliseconds each SPLICE starts after the one before it, in {@link colorOrder} — so the
       colours come on one after another rather than all together. Only visible when
       {@link waitMode} hides them first; 0 = every colour at once. */
@@ -401,6 +422,33 @@ export interface SpliceConfig {
   colors: (string | null)[];
   /** Splice slot index → index into the voice's `spliceInputs`; −1 = a blank slot. */
   inputBySlot: number[];
+  /**
+   * Present on a SLICE: cut through 3D space along a direction instead of around each hoop.
+   * Everything else in this config means the same thing for both — which is the point, since
+   * it lets a slice ride the splice's eval, voice and cascade machinery unchanged.
+   */
+  space?: SliceSpace;
+}
+
+/** The world axis a slice is stacked along, before any tilt. */
+export type SliceAxis = 'x' | 'y' | 'z';
+
+/** An axis-aligned box of world space, in mm — what a slice restricted to SPACE covers. */
+export interface SliceRegion {
+  min: Vec3;
+  max: Vec3;
+}
+
+/** The 3D half of a slice config — see {@link import('./slice')}. */
+export interface SliceSpace {
+  /** Unit vector the slabs are stacked along; the slab faces are perpendicular to it. */
+  direction: Vec3;
+  /** When set, only pixels inside this box are sliced, and the slabs span the box itself. */
+  region?: SliceRegion;
+  /** 0..1 — how strongly hit velocity scales brightness (0 ignores it, 1 is fully proportional). */
+  velocity: number;
+  /** How far a `'stagger'` jump moves the slabs, as a fraction of the span. */
+  incrementFrac: number;
 }
 
 /** `play` is accepted only as a legacy persisted graph alias. Gen3 authoring and
@@ -560,6 +608,25 @@ export interface GraphNode {
   spliceLoopRetrigger?: 'stop' | 'restart';
   /** 0..1 strength of a splice colour's tint over its effect. */
   spliceTint?: number;
+  /** THROUGH KIT's explicit drum order (drum ids, first to fire first). Absent → the pattern. */
+  spliceDrumSequence?: string[];
+  /** THROUGH DRUM's explicit hoop order (1-based hoop numbers). Absent → the pattern. */
+  spliceHoopSequence?: number[];
+  // slice (only meaningful when kind === 'slice'). A slice reuses every `splice*` field above
+  // for what it shares with a splice — count, jitter, motion, chases, envelope, rows — and adds
+  // only its geometry here. All optional + additive.
+  /** The world axis the slabs are stacked along, before tilting. Absent → `'x'`. */
+  sliceAxis?: SliceAxis;
+  /** Tilt of the slicing direction about the world X / Y / Z axes, degrees (applied X → Y → Z). */
+  sliceRotX?: number;
+  sliceRotY?: number;
+  sliceRotZ?: number;
+  /** A box of world space to slice, centre + size in mm. Absent → the node's scope (kit or drum). */
+  sliceRegion?: { cx: number; cy: number; cz: number; sx: number; sy: number; sz: number };
+  /** 0..1 velocity sensitivity. Absent → 1 (fully velocity sensitive). */
+  sliceVelocity?: number;
+  /** `'stagger'` jump as a percentage of the slicing span. Absent → 10. */
+  sliceIncrementPct?: number;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes
   /** Ordered list of params this node has EXPOSED as modulation targets (doc 10). Empty /
       absent by default; the target Inspector's "Add parameter" appends one. Each entry

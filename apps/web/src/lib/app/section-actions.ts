@@ -10,6 +10,7 @@ import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
 import Pencil from '@lucide/svelte/icons/pencil';
 import ListPlus from '@lucide/svelte/icons/list-plus';
 import Trash2 from '@lucide/svelte/icons/trash-2';
+import FolderOpen from '@lucide/svelte/icons/folder-open';
 
 export function sectionActions(store: TriggerLab, sectionId: string, rename: () => void): ContextMenuAction[] {
   const sections = store.activeSongById?.sections ?? [];
@@ -26,6 +27,7 @@ export function sectionActions(store: TriggerLab, sectionId: string, rename: () 
     { label: 'Rename', icon: Pencil, disabled, onSelect: rename },
     { label: 'Copy', icon: Copy, disabled, onSelect: () => void store.copySectionToClipboard(sectionId) },
     { label: 'Paste', icon: ClipboardPaste, disabled, onSelect: () => void store.pasteSectionFromClipboard() },
+    { label: 'Load graph from file…', icon: FolderOpen, disabled, onSelect: () => void store.loadGraphFileIntoSection(sectionId) },
     { label: 'Add all missing default drum zone graphs', icon: ListPlus, disabled, onSelect: () => store.addMissingDrumZoneGraphs(sectionId) },
     { label: 'Delete', icon: Trash2, disabled, danger: true, onSelect: () => store.removeSection(sectionId) },
   ];
