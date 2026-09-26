@@ -194,13 +194,22 @@ function syncMixInputState(input: MixInput, rendered: Voice, cycleOwned: boolean
 }
 
 /**
- * Identity of a splice voice's band LAYOUT — everything {@link computeSpliceBands} and
- * {@link forEachPartitionUnit} read, but nothing that moves. The chase is deliberately
+ * Identity of a splice voice's band LAYOUT — everything {@link computeSpliceBands},
+ * {@link forEachPartitionUnit} and {@link spliceUnitOrder} read, but nothing that moves. The rule
+ * that keeps this honest: ANY config field `buildSpliceUnits` reads must appear here, or editing it
+ * silently reuses a stale layout (the dragged sequences were once missing, and a changed order only
+ * took effect after an unrelated smudge change forced a rebuild). The chase is deliberately
  * excluded: it shifts which band shows what, never where the bands are cut, so a chasing
  * splice reuses one cached layout for the whole voice instead of re-cutting 60×/second.
  */
 function spliceLayoutKey(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): string {
   let key = `${cfg.count}|${cfg.jitter}|${cfg.seed}|${cfg.partition}|${cfg.order}|${cfg.drumOrder}|${cfg.smudge}|${model.pixelCount}`;
+  // The dragged orders decide every unit's place in the cascades, which the cached layout carries
+  // — so they belong in its identity. Missing them was a live bug: a changed THROUGH KIT / THROUGH
+  // DRUM order reused the layout cut for the old one until something that WAS in the key (the
+  // smudge) forced a rebuild, and setting that back found the old layout again.
+  if (cfg.drumSequence) key += `|d:${cfg.drumSequence.join(',')}`;
+  if (cfg.hoopSequence) key += `|h:${cfg.hoopSequence.join(',')}`;
   for (const range of ranges) key += `|${range.start}-${range.end}`;
   return key;
 }
